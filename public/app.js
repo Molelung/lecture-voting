@@ -23,9 +23,37 @@ createApp({
     const adminToken = ref(localStorage.getItem('lecture_admin_token') || '');
     const isAdmin = ref(!!adminToken.value);
     const showAdminModal = ref(false);
-    const adminActiveTab = ref('topics'); // 'topics' | 'ballots'
+    const adminActiveTab = ref('topics'); // 'topics' | 'settings' | 'ballots' | 'comments'
     const adminLoginForm = ref({ username: 'admin', password: '' });
     const ballots = ref([]);
+    const ballotSearchQuery = ref('');
+
+    // 社课内容编辑与新增状态
+    const showTopicEditModal = ref(false);
+    const isEditingNewTopic = ref(false);
+    const editingTopic = ref({
+      id: '',
+      title: '',
+      speaker: '',
+      category: '',
+      tag: '',
+      duration: '',
+      hook: '',
+      summary: '',
+      outlineText: ''
+    });
+    const savingTopic = ref(false);
+
+    // 管理员系统全局配置编辑表单
+    const adminSettingsForm = ref({
+      title: '朋辈社课大投票！',
+      subtitle: '',
+      maxVotesPerUser: 3,
+      allowChangeVote: true,
+      status: 'open',
+      resultsVisibility: 'public'
+    });
+    const savingSettings = ref(false);
 
     // 系统配置与候选选题
     const settings = ref({
@@ -159,6 +187,7 @@ createApp({
       try {
         const res = await api('/api/status');
         settings.value = res.settings;
+        initAdminSettingsForm();
         hasVoted.value = res.hasVoted;
         userVote.value = res.userVote;
         statsSummary.value = res.statsSummary || { totalVoters: 0, totalVotesCast: 0 };
@@ -512,11 +541,39 @@ createApp({
       }
     };
 
+    // 选票搜索与过滤
+    const filteredBallots = computed(() => {
+      if (!ballotSearchQuery.value.trim()) return ballots.value;
+      const q = ballotSearchQuery.value.trim().toLowerCase();
+      return ballots.value.filter(b => {
+        const idMatch = (b.id || '').toLowerCase().includes(q);
+        const voterMatch = (b.voterId || b.voterToken || '').toLowerCase().includes(q);
+        const topicMatch = (b.topicTitles || []).some(t => (t || '').toLowerCase().includes(q));
+        const commentMatch = (b.comment || '').toLowerCase().includes(q);
+        return idMatch || voterMatch || topicMatch || commentMatch;
+      });
+    });
+
     // 管理员相关操作
+    const initAdminSettingsForm = () => {
+      if (settings.value) {
+        adminSettingsForm.value = {
+          title: settings.value.title || '朋辈社课大投票！',
+          subtitle: settings.value.subtitle || '',
+          maxVotesPerUser: settings.value.maxVotesPerUser || 3,
+          allowChangeVote: settings.value.allowChangeVote !== false,
+          status: settings.value.status || 'open',
+          resultsVisibility: settings.value.resultsVisibility || 'public'
+        };
+      }
+    };
+
     const openAdminModal = () => {
       showAdminModal.value = true;
+      initAdminSettingsForm();
       if (isAdmin.value) {
         loadBallots();
+        loadPublicComments();
       }
     };
 
@@ -530,8 +587,10 @@ createApp({
         localStorage.setItem('lecture_admin_token', res.token);
         isAdmin.value = true;
         showToast('管理员凭据校验成功', 'success');
+        initAdminSettingsForm();
         loadBallots();
         loadResults();
+        loadPublicComments();
       } catch (e) {
         showToast(e.message || '账号或密码错误', 'error');
       }
@@ -550,6 +609,124 @@ createApp({
         ballots.value = res.ballots || [];
       } catch (e) {
         showToast('读取计票详情失败: ' + e.message, 'error');
+      }
+    };
+
+    // 保存系统设置
+    const saveSettings = async () => {
+      savingSettings.value = true;
+      try {
+        const res = await api('/api/admin/settings', {
+          method: 'PUT',
+          body: JSON.stringify(adminSettingsForm.value)
+        });
+        settings.value = { ...settings.value, ...res.settings };
+        showToast('系统全局配置已即时更新生效！', 'success');
+      } catch (e) {
+        showToast('配置保存失败: ' + e.message, 'error');
+      } finally {
+        savingSettings.value = false;
+      }
+    };
+
+    // 社课内容增删改
+    const openAddTopicModal = () => {
+      isEditingNewTopic.value = true;
+      editingTopic.value = {
+        id: '',
+        title: '',
+        speaker: '朋辈讲师',
+        category: '通识探索',
+        tag: '新议题',
+        duration: '45分钟讲解 + 15分钟互动',
+        hook: '',
+        summary: '',
+        outlineText: '一、背景与核心议题\n二、关键机制与典型案例\n三、生活实战与实践启发'
+      };
+      showTopicEditModal.value = true;
+    };
+
+    const openEditTopicModal = (t) => {
+      isEditingNewTopic.value = false;
+      editingTopic.value = {
+        id: t.id,
+        title: t.title || '',
+        speaker: t.speaker || '',
+        category: t.category || '',
+        tag: t.tag || '',
+        duration: t.duration || '',
+        hook: t.hook || '',
+        summary: t.summary || '',
+        outlineText: Array.isArray(t.outline) ? t.outline.join('\n') : (t.outline || '')
+      };
+      showTopicEditModal.value = true;
+    };
+
+    const saveTopic = async () => {
+      if (!editingTopic.value.title.trim()) {
+        showToast('社课名称不能为空', 'warning');
+        return;
+      }
+      savingTopic.value = true;
+      try {
+        const payload = {
+          title: editingTopic.value.title.trim(),
+          speaker: editingTopic.value.speaker.trim(),
+          category: editingTopic.value.category.trim(),
+          tag: editingTopic.value.tag.trim(),
+          duration: editingTopic.value.duration.trim(),
+          hook: editingTopic.value.hook.trim(),
+          summary: editingTopic.value.summary.trim(),
+          outline: editingTopic.value.outlineText.split('\n').map(s => s.trim()).filter(Boolean)
+        };
+
+        if (isEditingNewTopic.value) {
+          await api('/api/admin/topics', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+          });
+          showToast('新增社课议题成功！', 'success');
+        } else {
+          await api(`/api/admin/topics/${editingTopic.value.id}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+          });
+          showToast('社课内容修改已保存！', 'success');
+        }
+        showTopicEditModal.value = false;
+        await loadTopics();
+        if (canSeeResults.value) {
+          await loadResults();
+        }
+      } catch (e) {
+        showToast('保存社课失败: ' + e.message, 'error');
+      } finally {
+        savingTopic.value = false;
+      }
+    };
+
+    const deleteTopic = async (topic) => {
+      if (!confirm(`确定彻底删除社课《${topic.title}》吗？此操作不可撤销！`)) return;
+      try {
+        await api(`/api/admin/topics/${topic.id}`, { method: 'DELETE' });
+        showToast('社课已成功删除', 'success');
+        await loadTopics();
+        if (canSeeResults.value) {
+          await loadResults();
+        }
+      } catch (e) {
+        showToast('删除失败: ' + e.message, 'error');
+      }
+    };
+
+    const adminDeleteComment = async (commentId) => {
+      if (!confirm('确定删除此条讨论留言吗？')) return;
+      try {
+        await api(`/api/comments/${commentId}`, { method: 'DELETE' });
+        showToast('留言已安全删除', 'success');
+        await loadPublicComments();
+      } catch (e) {
+        showToast('删除留言失败: ' + e.message, 'error');
       }
     };
 
@@ -661,6 +838,20 @@ createApp({
       adminActiveTab,
       adminLoginForm,
       ballots,
+      ballotSearchQuery,
+      filteredBallots,
+      showTopicEditModal,
+      isEditingNewTopic,
+      editingTopic,
+      savingTopic,
+      openAddTopicModal,
+      openEditTopicModal,
+      saveTopic,
+      deleteTopic,
+      adminSettingsForm,
+      savingSettings,
+      saveSettings,
+      adminDeleteComment,
       toggleTopic,
       toggleExpand,
       loadTopicComments,

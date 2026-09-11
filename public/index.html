@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="theme-color" content="#fbfbfa">
   <title>朋辈社课大投票！</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
 
   <!-- 本地静态资源（秒开零延迟） -->
   <script src="./vendor/tailwindcss.js"></script>
@@ -43,8 +44,18 @@
     <!-- 顶部极简学术导航条 (Notion Header) -->
     <header class="sticky top-0 z-40 bg-[#fbfbfa]/90 backdrop-blur-md px-4 sm:px-8 py-3 flex items-center justify-between gap-3 border-b border-[#e9e9e7]">
       <div class="flex items-center gap-2.5 min-w-0">
-        <div class="w-7 h-7 rounded-md bg-[#2f3437] text-white flex items-center justify-center font-serif font-bold text-xs shrink-0">
-          P
+        <!-- 智性书本图标 (Minimalist Book Icon) -->
+        <div class="w-7 h-7 rounded-md bg-[#2f3437] text-white flex items-center justify-center shrink-0 shadow-2xs">
+          <svg class="w-4 h-4 text-white" viewBox="0 0 32 32" fill="none">
+            <path d="M4 7C4 5.89543 4.89543 5 6 5H13.6C14.73 5 15.7 5.72 16 6.78C16.3 5.72 17.27 5 18.4 5H26C27.1046 5 28 5.89543 28 7V23C28 24.1046 27.1046 25 26 25H18.4C17.0745 25 16 26.0745 16 27.4C16 26.0745 14.9255 25 13.6 25H6C4.89543 25 4 24.1046 4 23V7Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M16 7V26" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M8 10H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M8 14H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M8 18H11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M20 10H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M20 14H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M21 18H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
         </div>
         <div class="flex items-center gap-2 min-w-0">
           <span class="font-serif font-semibold text-[#2f3437] text-sm sm:text-base tracking-tight truncate">朋辈社课大投票！</span>
@@ -654,55 +665,324 @@
               <span class="font-serif font-bold text-[#2f3437] text-sm">社课管理中心</span>
               <span class="text-[10px] bg-[#f0efe9] text-[#5a5853] px-2 py-0.5 rounded font-medium">管理员</span>
             </div>
-            <button @click="handleAdminLogout" class="text-xs text-[#787774] hover:text-[#2f3437]">退出</button>
+            <button @click="handleAdminLogout" class="text-xs text-[#787774] hover:text-[#2f3437]">退出登录</button>
           </div>
 
-          <div class="flex items-center gap-2 mb-3">
+          <!-- 4 大功能选项卡 -->
+          <div class="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 no-scrollbar text-xs">
             <button 
               @click="adminActiveTab = 'topics'" 
-              :class="adminActiveTab === 'topics' ? 'bg-[#2f3437] text-white' : 'bg-[#f0efe9] text-[#787774]'"
-              class="text-xs py-1 px-3 rounded font-medium">
-              社课管理
+              :class="adminActiveTab === 'topics' ? 'bg-[#2f3437] text-white' : 'bg-[#f0efe9] text-[#787774] hover:text-[#2f3437]'"
+              class="py-1 px-2.5 rounded font-medium shrink-0 transition-colors">
+              社课管理 ({{ topics.length }})
+            </button>
+            <button 
+              @click="adminActiveTab = 'settings'" 
+              :class="adminActiveTab === 'settings' ? 'bg-[#2f3437] text-white' : 'bg-[#f0efe9] text-[#787774] hover:text-[#2f3437]'"
+              class="py-1 px-2.5 rounded font-medium shrink-0 transition-colors">
+              系统配置
             </button>
             <button 
               @click="adminActiveTab = 'ballots'; loadBallots();" 
-              :class="adminActiveTab === 'ballots' ? 'bg-[#2f3437] text-white' : 'bg-[#f0efe9] text-[#787774]'"
-              class="text-xs py-1 px-3 rounded font-medium">
-              选票明细 ({{ ballots.length }})
+              :class="adminActiveTab === 'ballots' ? 'bg-[#2f3437] text-white' : 'bg-[#f0efe9] text-[#787774] hover:text-[#2f3437]'"
+              class="py-1 px-2.5 rounded font-medium shrink-0 transition-colors">
+              选票审计 ({{ ballots.length }})
+            </button>
+            <button 
+              @click="adminActiveTab = 'comments'; loadPublicComments();" 
+              :class="adminActiveTab === 'comments' ? 'bg-[#2f3437] text-white' : 'bg-[#f0efe9] text-[#787774] hover:text-[#2f3437]'"
+              class="py-1 px-2.5 rounded font-medium shrink-0 transition-colors">
+              讨论治理 ({{ publicComments.length }})
             </button>
           </div>
 
-          <!-- 选项卡 1：社课管理 -->
-          <div v-if="adminActiveTab === 'topics'" class="overflow-y-auto flex-1 space-y-2 pr-1">
-            <div v-for="t in topics" :key="t.id" class="p-2.5 bg-[#fbfbfa] rounded-lg border border-[#e9e9e7] flex items-center justify-between text-xs">
-              <div class="truncate mr-2">
-                <span class="font-medium text-[#2f3437]">{{ t.title }}</span>
-                <span class="text-[#787774] text-[10px] ml-1">({{ t.speaker }})</span>
+          <!-- 选项卡 1：社课管理与内容编辑 -->
+          <div v-if="adminActiveTab === 'topics'" class="overflow-y-auto flex-1 space-y-2.5 pr-1">
+            <div class="flex items-center justify-between pb-1">
+              <span class="text-[11px] text-[#787774]">可修改标题、主讲人、简介及详细大纲</span>
+              <button 
+                @click="openAddTopicModal"
+                class="inline-flex items-center gap-1 text-xs py-1 px-2.5 rounded bg-[#2f3437] text-white font-medium hover:bg-black transition-colors">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                <span>新增社课</span>
+              </button>
+            </div>
+            
+            <div v-for="t in topics" :key="t.id" class="p-3 bg-[#fbfbfa] rounded-xl border border-[#e9e9e7] space-y-1.5 text-xs">
+              <div class="flex items-start justify-between gap-2">
+                <div class="font-medium text-[#2f3437] line-clamp-1 flex-1">{{ t.title }}</div>
+                <span class="font-serif font-bold text-[#2f3437] shrink-0 text-[13px]">{{ t.stats ? (t.stats.count || 0) : 0 }} 票</span>
               </div>
-              <span class="font-serif font-bold text-[#2f3437] shrink-0">{{ t.stats.count || 0 }} 票</span>
+              <div class="flex items-center gap-2 text-[11px] text-[#787774] flex-wrap">
+                <span class="bg-[#f0efe9] px-1.5 py-0.5 rounded text-[#5a5853]">{{ t.category }}</span>
+                <span>主讲：{{ t.speaker }}</span>
+                <span v-if="t.duration">· {{ t.duration }}</span>
+              </div>
+              <div v-if="t.summary" class="text-[11px] text-[#5a5853] line-clamp-2 leading-relaxed bg-white/70 p-1.5 rounded border border-[#e9e9e7]/50">
+                {{ t.summary }}
+              </div>
+              <div class="flex items-center justify-end gap-2 pt-1 border-t border-[#e9e9e7]/60">
+                <button 
+                  @click="openEditTopicModal(t)"
+                  class="px-2 py-0.5 rounded border border-[#e9e9e7] bg-white text-[#2f3437] hover:bg-[#f0efe9] text-[11px] font-medium transition-colors">
+                  编辑修改
+                </button>
+                <button 
+                  @click="deleteTopic(t)"
+                  class="px-2 py-0.5 rounded text-rose-600 hover:bg-rose-50 text-[11px] font-medium transition-colors">
+                  删除
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- 选项卡 2：选票与数据导出 -->
-          <div v-else-if="adminActiveTab === 'ballots'" class="overflow-y-auto flex-1 space-y-2 pr-1">
-            <div class="flex items-center justify-between mb-2">
-              <button @click="exportCsv" class="text-xs py-1 px-3 rounded bg-[#2f3437] text-white font-medium">
-                导出 Excel CSV 表格
+          <!-- 选项卡 2：系统全局配置 -->
+          <div v-else-if="adminActiveTab === 'settings'" class="overflow-y-auto flex-1 space-y-3 pr-1 text-xs">
+            <form @submit.prevent="saveSettings" class="space-y-3">
+              <div class="space-y-1">
+                <label class="block font-medium text-[#2f3437]">大标题</label>
+                <input 
+                  v-model="adminSettingsForm.title" 
+                  type="text" 
+                  class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437]">
+              </div>
+
+              <div class="space-y-1">
+                <label class="block font-medium text-[#2f3437]">副标题说明</label>
+                <textarea 
+                  v-model="adminSettingsForm.subtitle" 
+                  rows="2"
+                  class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437] resize-none"></textarea>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div class="space-y-1">
+                  <label class="block font-medium text-[#2f3437]">每人最大投票数</label>
+                  <select 
+                    v-model.number="adminSettingsForm.maxVotesPerUser"
+                    class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none">
+                    <option :value="1">每人限投 1 票</option>
+                    <option :value="2">每人至多 2 票</option>
+                    <option :value="3">每人至多 3 票 (推荐)</option>
+                    <option :value="4">每人至多 4 票</option>
+                    <option :value="5">每人至多 5 票</option>
+                  </select>
+                </div>
+
+                <div class="space-y-1">
+                  <label class="block font-medium text-[#2f3437]">投票开放状态</label>
+                  <select 
+                    v-model="adminSettingsForm.status"
+                    class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none">
+                    <option value="open">🟢 正常开放投票</option>
+                    <option value="paused">🟡 临时暂停投票</option>
+                    <option value="closed">🔴 正式截止锁定</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div class="space-y-1">
+                  <label class="block font-medium text-[#2f3437]">榜单公开规则</label>
+                  <select 
+                    v-model="adminSettingsForm.resultsVisibility"
+                    class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none">
+                    <option value="public">全员公开实时榜单</option>
+                    <option value="after_vote">投出选票后才解锁</option>
+                    <option value="admin_only">仅管理员可见榜单</option>
+                  </select>
+                </div>
+
+                <div class="space-y-1">
+                  <label class="block font-medium text-[#2f3437]">选民改票权限</label>
+                  <select 
+                    v-model="adminSettingsForm.allowChangeVote"
+                    class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none">
+                    <option :value="true">允许修改已投选票</option>
+                    <option :value="false">禁止修改（一票定音）</option>
+                  </select>
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                :disabled="savingSettings"
+                class="w-full bg-[#2f3437] text-white py-2 rounded-lg font-medium text-xs hover:bg-black transition-colors disabled:opacity-50">
+                {{ savingSettings ? '正在保存配置...' : '保存系统配置并即刻生效' }}
               </button>
-              <button @click="clearVotes" class="text-rose-600 hover:text-rose-800 text-xs">
+            </form>
+          </div>
+
+          <!-- 选项卡 3：选票明细与审计导出 -->
+          <div v-else-if="adminActiveTab === 'ballots'" class="overflow-y-auto flex-1 space-y-2 pr-1 text-xs">
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <button @click="exportCsv" class="text-xs py-1 px-3 rounded bg-[#2f3437] text-white font-medium hover:bg-black transition-colors">
+                导出 Excel CSV
+              </button>
+              <button @click="clearVotes" class="text-rose-600 hover:text-rose-800 text-xs font-medium">
                 清空重置选票
               </button>
             </div>
-            <div v-for="b in ballots" :key="b.id" class="p-2.5 bg-[#fbfbfa] rounded-lg border border-[#e9e9e7] text-xs space-y-0.5">
+
+            <!-- 搜索框 -->
+            <input 
+              v-model="ballotSearchQuery"
+              type="text"
+              placeholder="搜索选票ID、设备标识、社课或留言..."
+              class="w-full border border-[#e9e9e7] rounded-lg p-1.5 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none mb-1">
+
+            <div v-if="filteredBallots.length === 0" class="text-center py-6 text-xs text-[#787774]">
+              {{ ballots.length === 0 ? '暂无选票投递记录' : '未找到匹配的选票明细' }}
+            </div>
+
+            <div v-for="b in filteredBallots" :key="b.id" class="p-2.5 bg-[#fbfbfa] rounded-lg border border-[#e9e9e7] space-y-1">
               <div class="flex justify-between font-medium text-[#2f3437] text-[11px]">
-                <span>选票 #{{ b.id.slice(-6) }}</span>
-                <span class="text-[#9b9a97] font-normal">{{ new Date(b.votedAt).toLocaleTimeString() }}</span>
+                <span>选票 #{{ b.id.slice(-8) }}</span>
+                <span class="text-[#9b9a97] font-normal">{{ b.votedAt ? new Date(b.votedAt).toLocaleString() : '' }}</span>
               </div>
-              <div class="text-[#5a5853] text-[11px]">所选：{{ b.topicTitles.join('；') }}</div>
-              <div v-if="b.comment" class="text-[#787774] text-[10px] italic">心愿：{{ b.comment }}</div>
+              <div class="text-[#5a5853] text-[11px]">所选：{{ (b.topicTitles || []).join('；') }}</div>
+              <div v-if="b.comment" class="text-[#787774] text-[10px] italic bg-white/70 p-1 rounded border border-[#e9e9e7]/50">
+                心愿：{{ b.comment }}
+              </div>
+              <div class="text-[10px] text-[#9b9a97] truncate">指纹：{{ b.voterId || b.voterToken || '匿名选民' }}</div>
+            </div>
+          </div>
+
+          <!-- 选项卡 4：公共讨论治理 -->
+          <div v-else-if="adminActiveTab === 'comments'" class="overflow-y-auto flex-1 space-y-2 pr-1 text-xs">
+            <div class="text-[11px] text-[#787774] mb-1">
+              共 {{ publicComments.length }} 条发言，可在此审查或清理违规讨论
+            </div>
+
+            <div v-if="publicComments.length === 0" class="text-center py-6 text-xs text-[#787774]">
+              暂无讨论区发言
+            </div>
+
+            <div v-for="c in publicComments" :key="c.id" class="p-2.5 bg-[#fbfbfa] rounded-lg border border-[#e9e9e7] space-y-1 text-xs">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-1.5 font-medium text-[#2f3437] text-[11px]">
+                  <span>{{ c.authorName || '朋辈学友' }}</span>
+                  <span class="text-[10px] bg-[#f0efe9] text-[#787774] px-1 rounded">{{ c.topicTitle || '公共综合' }}</span>
+                </div>
+                <button 
+                  @click="adminDeleteComment(c.id)"
+                  class="text-rose-600 hover:text-rose-800 text-[11px] font-medium">
+                  删除
+                </button>
+              </div>
+              <div class="text-[#2f3437] text-xs leading-relaxed">{{ c.text }}</div>
+              <div class="text-[10px] text-[#9b9a97]">{{ formatTime(c.createdAt) }}</div>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ================= 弹窗：编辑 / 新增社课议题 ================= -->
+    <div v-if="showTopicEditModal" class="modal-overlay" @click.self="showTopicEditModal = false">
+      <div class="modal-content max-w-lg w-full p-6 max-h-[85vh] flex flex-col bg-white border border-[#e9e9e7] rounded-2xl">
+        <div class="modal-sheet-handle"></div>
+
+        <div class="flex items-center justify-between pb-3 border-b border-[#e9e9e7] mb-3">
+          <h3 class="font-serif font-bold text-[#2f3437] text-sm">
+            {{ isEditingNewTopic ? '新增社课议题' : '编辑社课内容' }}
+          </h3>
+          <button @click="showTopicEditModal = false" class="text-xs text-[#787774] hover:text-[#2f3437]">关闭</button>
+        </div>
+
+        <form @submit.prevent="saveTopic" class="overflow-y-auto flex-1 space-y-3 pr-1 text-xs">
+          <div class="space-y-1">
+            <label class="block font-medium text-[#2f3437]">社课标题 <span class="text-rose-500">*</span></label>
+            <input 
+              v-model="editingTopic.title" 
+              type="text" 
+              placeholder="例如：认知偏差与日常决策：为什么聪明人也会犯傻？"
+              class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437]" required>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div class="space-y-1">
+              <label class="block font-medium text-[#2f3437]">主讲人 / 主讲组</label>
+              <input 
+                v-model="editingTopic.speaker" 
+                type="text" 
+                placeholder="例如：学术研讨组 · 认知心理学"
+                class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437]">
+            </div>
+            <div class="space-y-1">
+              <label class="block font-medium text-[#2f3437]">预计时长</label>
+              <input 
+                v-model="editingTopic.duration" 
+                type="text" 
+                placeholder="例如：45分钟讲解 + 15分钟研讨"
+                class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437]">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div class="space-y-1">
+              <label class="block font-medium text-[#2f3437]">分类 (用于标签与筛选)</label>
+              <input 
+                v-model="editingTopic.category" 
+                type="text" 
+                placeholder="例如：认知决策 / 自我效能 / 通识哲学"
+                class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437]">
+            </div>
+            <div class="space-y-1">
+              <label class="block font-medium text-[#2f3437]">标签</label>
+              <input 
+                v-model="editingTopic.tag" 
+                type="text" 
+                placeholder="例如：思维模型 / 行动科学"
+                class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437]">
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <label class="block font-medium text-[#2f3437]">一句话导语亮点 (卡片醒目金句)</label>
+            <input 
+              v-model="editingTopic.hook" 
+              type="text" 
+              placeholder="例如：直面思维盲区，掌握理性权衡的底层逻辑"
+              class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437]">
+          </div>
+
+          <div class="space-y-1">
+            <label class="block font-medium text-[#2f3437]">课程核心简介 (展开可见详情)</label>
+            <textarea 
+              v-model="editingTopic.summary" 
+              rows="3" 
+              placeholder="介绍课程探讨的核心背景与现实意义..."
+              class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437] resize-none"></textarea>
+          </div>
+
+          <div class="space-y-1">
+            <div class="flex items-center justify-between">
+              <label class="block font-medium text-[#2f3437]">详细大纲要点</label>
+              <span class="text-[10px] text-[#787774]">每行一条大纲要点</span>
+            </div>
+            <textarea 
+              v-model="editingTopic.outlineText" 
+              rows="4" 
+              placeholder="一、为什么我们容易被第一直觉误导？&#10;二、确认偏差与锚定效应的神经机制&#10;三、如何在日常做决策时引入反向求证机制"
+              class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437] font-mono leading-relaxed resize-none"></textarea>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#e9e9e7]">
+            <button 
+              type="button" 
+              @click="showTopicEditModal = false" 
+              class="px-3 py-1.5 rounded-lg border border-[#e9e9e7] text-[#787774] hover:bg-[#f0efe9]">
+              取消
+            </button>
+            <button 
+              type="submit" 
+              :disabled="savingTopic"
+              class="px-4 py-1.5 rounded-lg bg-[#2f3437] text-white font-medium hover:bg-black disabled:opacity-50">
+              {{ savingTopic ? '正在保存...' : '保存社课内容' }}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 

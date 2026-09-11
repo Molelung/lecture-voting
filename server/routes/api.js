@@ -246,6 +246,11 @@ router.get('/results', (req, res) => {
 
 // ================= 管理员接口 =================
 
+// 读取系统全局配置
+router.get('/admin/settings', requireAdmin, (req, res) => {
+  res.json({ success: true, settings: db.getSettings() });
+});
+
 // 修改系统全局配置
 router.put('/admin/settings', requireAdmin, (req, res) => {
   const { title, subtitle, maxVotesPerUser, allowChangeVote, status, resultsVisibility } = req.body;

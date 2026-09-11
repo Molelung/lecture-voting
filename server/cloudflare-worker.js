@@ -675,6 +675,9 @@ export default {
           if (!title || !title.trim()) {
             return jsonResponse({ error: '社课主题名称不能为空' }, 400);
           }
+          const outlineArr = Array.isArray(outline) 
+            ? outline.map(s => String(s).trim()).filter(Boolean)
+            : (typeof outline === 'string' ? outline.split('\n').map(s => s.trim()).filter(Boolean) : []);
           let topics = await getJsonKV(KV, 'topics', []);
           const newTopic = {
             id: 'topic-' + Date.now().toString(36),
@@ -685,7 +688,7 @@ export default {
             duration: (duration || '45分钟讲解 + 15分钟互动').trim(),
             hook: (hook || '').trim(),
             summary: (summary || '').trim(),
-            outline: Array.isArray(outline) ? outline : [],
+            outline: outlineArr.length > 0 ? outlineArr : ['主题内容筹备中...'],
             createdAt: new Date().toISOString()
           };
           topics.push(newTopic);
@@ -702,7 +705,17 @@ export default {
           if (idx === -1) {
             return jsonResponse({ error: '未找到对应社课议题' }, 404);
           }
-          topics[idx] = { ...topics[idx], ...updates, id: topicId };
+          if (updates.outline !== undefined) {
+            updates.outline = Array.isArray(updates.outline)
+              ? updates.outline.map(s => String(s).trim()).filter(Boolean)
+              : (typeof updates.outline === 'string' ? updates.outline.split('\n').map(s => s.trim()).filter(Boolean) : []);
+          }
+          topics[idx] = { 
+            ...topics[idx], 
+            ...updates, 
+            id: topicId,
+            updatedAt: new Date().toISOString()
+          };
           await KV.put('topics', JSON.stringify(topics));
           return jsonResponse({ success: true, message: '社课议题修改成功！', topic: topics[idx] });
         }
