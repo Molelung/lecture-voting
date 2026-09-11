@@ -205,13 +205,28 @@ async function getCachedKV(KV, key, ttlMs) {
   if (cacheEntry && cacheEntry.exp > now && cacheEntry.data !== null) {
     return cacheEntry.data;
   }
-  const raw = await KV.get(key);
-  const parsed = raw ? JSON.parse(raw) : null;
-  if (cacheEntry) {
-    cacheEntry.data = parsed;
-    cacheEntry.exp = now + ttlMs;
+  try {
+    const raw = await KV.get(key);
+    let parsed = null;
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw);
+      } catch (parseErr) {
+        console.warn(`KV key ${key} raw parse failed, using fallback:`, parseErr.message);
+      }
+    }
+    if (parsed !== null) {
+      if (cacheEntry) {
+        cacheEntry.data = parsed;
+        cacheEntry.exp = now + ttlMs;
+      }
+      return parsed;
+    }
+    return cacheEntry?.data || null;
+  } catch (err) {
+    console.error(`KV get failed for ${key}:`, err);
+    return cacheEntry?.data || null;
   }
-  return parsed;
 }
 
 export default {
@@ -262,8 +277,8 @@ export default {
       // 1. GET /api/status (系统配置、选民投票状态与统计汇总)
       if (path === '/api/status' && method === 'GET') {
         const settings = await getCachedKV(KV, 'settings', TTL.SETTINGS) || {
-          title: '朋辈研学 · 2026 春季社课议题征集',
-          subtitle: '由全校学友共同票选决定开讲顺序与研讨方向（限选 1~3 项）',
+          title: '朋辈社课大投票！',
+          subtitle: '选出你最期待开讲的议题，投票完成后揭晓全站热度排行（限选 1~3 项）',
           maxVotesPerUser: 3,
           allowChangeVote: true,
           status: 'open',
@@ -275,10 +290,14 @@ export default {
         let hasVoted = false;
 
         if (voterToken) {
-          const directVoterRaw = await KV.get('voter:' + voterToken);
-          if (directVoterRaw) {
-            userVote = JSON.parse(directVoterRaw);
-            hasVoted = true;
+          try {
+            const directVoterRaw = await KV.get('voter:' + voterToken);
+            if (directVoterRaw) {
+              userVote = JSON.parse(directVoterRaw);
+              hasVoted = true;
+            }
+          } catch (e) {
+            console.warn('Voter key lookup error:', e);
           }
         }
 
