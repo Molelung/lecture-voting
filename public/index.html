@@ -6,7 +6,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="theme-color" content="#fbfbfa">
-  <title>朋辈社课 · 议题征集与票选</title>
+  <title>朋辈社课大投票！</title>
 
   <!-- 本地静态资源（秒开零延迟） -->
   <script src="./vendor/tailwindcss.js"></script>
@@ -47,7 +47,7 @@
           P
         </div>
         <div class="flex items-center gap-2 min-w-0">
-          <span class="font-serif font-semibold text-[#2f3437] text-sm sm:text-base tracking-tight truncate">朋辈研学 · 社课票选</span>
+          <span class="font-serif font-semibold text-[#2f3437] text-sm sm:text-base tracking-tight truncate">朋辈社课大投票！</span>
           <span v-if="settings.status === 'open'" class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded shrink-0">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
             <span>征集中</span>
@@ -88,13 +88,13 @@
       <section class="mb-5 sm:mb-8 text-center max-w-xl mx-auto">
         <div class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#f0efe9] text-[#5a5853] text-xs font-medium mb-2.5">
           <span class="text-[9px] text-[#787774]">●</span>
-          <span>朋辈研学 · 2026 春季研讨议题征集</span>
+          <span>朋辈研学 · 春季社课票选</span>
         </div>
         <h2 class="font-serif text-xl sm:text-2xl md:text-3xl font-bold text-[#2f3437] tracking-tight leading-tight mb-2">
-          {{ settings.title || '朋辈社课 · 选出你最想听的一课' }}
+          {{ settings.title || '朋辈社课大投票！' }}
         </h2>
         <p class="text-xs sm:text-sm text-[#787774] leading-relaxed max-w-md mx-auto mb-3">
-          {{ settings.subtitle || '由全校学友共同票选决定开讲顺序与研讨方向。投票完成后揭晓全站热度排行。' }}
+          {{ settings.subtitle || '选出你最期待开讲的议题，投票完成后揭晓全站热度排行（限选 1~3 项）' }}
         </p>
 
         <!-- 极简选票指示槽与参与统计 -->
