@@ -641,13 +641,23 @@ createApp({
         duration: '45分钟讲解 + 15分钟互动',
         hook: '',
         summary: '',
-        outlineText: '一、背景与核心议题\n二、关键机制与典型案例\n三、生活实战与实践启发'
+        outlineText: '直觉 vs 理性 · 剖析系统 1 与系统 2 的底层神经博弈机制\n三大盲区 · 拆解锚定效应、确认偏误与幸存者偏差的日常表征\n实战工具 · 掌握 4 步可落地的日常自检工具箱'
       };
       showTopicEditModal.value = true;
     };
 
     const openEditTopicModal = (t) => {
       isEditingNewTopic.value = false;
+      const formattedOutline = Array.isArray(t.outline)
+        ? t.outline.map(item => {
+            if (typeof item === 'object' && item !== null) {
+              if (item.tag && item.desc) return `${item.tag} · ${item.desc}`;
+              return item.desc || item.tag || JSON.stringify(item);
+            }
+            return String(item);
+          }).join('\n')
+        : (t.outline || '');
+
       editingTopic.value = {
         id: t.id,
         title: t.title || '',
@@ -657,7 +667,7 @@ createApp({
         duration: t.duration || '',
         hook: t.hook || '',
         summary: t.summary || '',
-        outlineText: Array.isArray(t.outline) ? t.outline.join('\n') : (t.outline || '')
+        outlineText: formattedOutline
       };
       showTopicEditModal.value = true;
     };
@@ -669,6 +679,26 @@ createApp({
       }
       savingTopic.value = true;
       try {
+        const parsedOutline = editingTopic.value.outlineText
+          .split('\n')
+          .map(s => s.trim())
+          .filter(Boolean)
+          .map(line => {
+            if (line.includes(' · ')) {
+              const [tag, ...rest] = line.split(' · ');
+              return { tag: tag.trim(), desc: rest.join(' · ').trim() };
+            }
+            if (line.includes('：')) {
+              const [tag, ...rest] = line.split('：');
+              return { tag: tag.trim(), desc: rest.join('：').trim() };
+            }
+            if (line.includes(': ')) {
+              const [tag, ...rest] = line.split(': ');
+              return { tag: tag.trim(), desc: rest.join(': ').trim() };
+            }
+            return { tag: '核心要点', desc: line };
+          });
+
         const payload = {
           title: editingTopic.value.title.trim(),
           speaker: editingTopic.value.speaker.trim(),
@@ -677,7 +707,7 @@ createApp({
           duration: editingTopic.value.duration.trim(),
           hook: editingTopic.value.hook.trim(),
           summary: editingTopic.value.summary.trim(),
-          outline: editingTopic.value.outlineText.split('\n').map(s => s.trim()).filter(Boolean)
+          outline: parsedOutline
         };
 
         if (isEditingNewTopic.value) {
