@@ -200,6 +200,11 @@ export default {
     const isAdmin = adminUser && adminUser.role === 'admin';
 
     try {
+      // 根路径直连智能重定向至前端页面，保障直接键入域名时体验丝滑
+      if ((path === '/' || path === '/index.html') && method === 'GET') {
+        return Response.redirect('https://molelung.github.io/lecture-voting/', 302);
+      }
+
       // 0. GET /api/health (集群探活与健康监控端点)
       if (path === '/api/health' && method === 'GET') {
         const dur = Date.now() - startTime;
