@@ -1,12 +1,17 @@
 /**
- * Cloudflare Worker API for Lecture Voting System
- * Backed by Cloudflare KV with AES-256-GCM Encryption
+ * Cloudflare Worker API for Peer Lecture Voting System
+ * Features:
+ * - Zero-barrier anonymous voting with client device token (X-Voter-Token)
+ * - Obscured stats before voting, full dynamic leaderboard unlocked after voting
+ * - Public peer lecture comment wall (心愿提问箱)
+ * - AES-256-GCM hardware encryption for sensitive storage in Cloudflare KV
+ * - Excel-compatible UTF-8 BOM CSV export for administrator
  */
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Voter-Token',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -20,7 +25,6 @@ function jsonResponse(data, status = 200) {
   });
 }
 
-// 兼容 UTF-8 的 Base64URL 编码与解码
 function base64UrlEncode(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = '';
@@ -43,7 +47,7 @@ function base64UrlDecode(str) {
   return new TextDecoder().decode(bytes);
 }
 
-// AES-256-GCM 硬件级高强度数据加密
+// AES-256-GCM 硬件加密
 async function getCryptoKey(secret) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
@@ -104,13 +108,7 @@ async function decryptData(cipherCombined, secret) {
   }
 }
 
-async function hashPassword(password) {
-  const enc = new TextEncoder();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(`salt_lecture_${password}`));
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// 解析 Authorization 头中的 JWT
+// 解析管理授权 Token
 function parseUserFromHeader(request) {
   const auth = request.headers.get('Authorization');
   if (!auth || !auth.startsWith('Bearer ')) return null;
@@ -118,8 +116,7 @@ function parseUserFromHeader(request) {
   try {
     const parts = token.split('.');
     if (parts.length >= 2) {
-      const payloadStr = base64UrlDecode(parts[1]);
-      return JSON.parse(payloadStr);
+      return JSON.parse(base64UrlDecode(parts[1]));
     }
     return JSON.parse(base64UrlDecode(token));
   } catch (e) {
@@ -146,7 +143,6 @@ export default {
     const path = url.pathname;
     const method = request.method;
 
-    // 处理 CORS 预检
     if (method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
@@ -158,13 +154,18 @@ export default {
 
     const secretKey = env.ENCRYPTION_KEY || 'peer-lecture-voting-aes256-secret-key-2026!';
 
+    // 获取当前客户端的设备唯一匿名指纹与管理员身份
+    const voterToken = request.headers.get('X-Voter-Token') || url.searchParams.get('voterToken') || '';
+    const adminUser = parseUserFromHeader(request);
+    const isAdmin = adminUser && adminUser.role === 'admin';
+
     try {
-      // 1. GET /api/status (系统状态与当前用户)
+      // 1. GET /api/status (系统状态、投票规则与选民状态)
       if (path === '/api/status' && method === 'GET') {
         const settingsRaw = await KV.get('settings');
         const settings = settingsRaw ? JSON.parse(settingsRaw) : {
-          title: '朋辈社课主题征集与票选',
-          subtitle: '甄选优质主题，由你投票决定本学期社课开讲顺序（每人限投 1~3 票）',
+          title: '朋辈社课 · 选出你最想听的一课',
+          subtitle: '由你投票决定本学期公开课排期顺序（每人限投 1~3 票）',
           maxVotesPerUser: 3,
           allowChangeVote: true,
           status: 'open',
@@ -174,16 +175,14 @@ export default {
         const ballotsRaw = await KV.get('ballots');
         const ballots = ballotsRaw ? JSON.parse(ballotsRaw) : [];
 
-        const user = parseUserFromHeader(request);
+        // 识别当前设备是否已投票
         let userVote = null;
-        if (user) {
-          const found = ballots.find(b => b.voterId === user.id);
+        let hasVoted = false;
+        if (voterToken) {
+          const found = ballots.find(b => b.voterId === voterToken || b.voterToken === voterToken);
           if (found) {
-            userVote = {
-              ...found,
-              voterName: user.displayName,
-              voterUsername: user.username,
-            };
+            userVote = found;
+            hasVoted = true;
           }
         }
 
@@ -193,9 +192,10 @@ export default {
         return jsonResponse({
           success: true,
           settings,
-          user: user ? { id: user.id, username: user.username, displayName: user.displayName, role: user.role } : null,
+          user: adminUser ? { username: adminUser.username, role: 'admin' } : null,
+          hasVoted,
           userVote,
-          canSeeResults: settings.resultsVisibility === 'public' || (user && user.role === 'admin'),
+          canSeeResults: hasVoted || isAdmin,
           statsSummary: {
             totalVoters,
             totalVotesCast
@@ -203,7 +203,7 @@ export default {
         });
       }
 
-      // 2. GET /api/topics (社课候选列表)
+      // 2. GET /api/topics (社课列表，投前脱敏锁定，投后解锁)
       if (path === '/api/topics' && method === 'GET') {
         const topicsRaw = await KV.get('topics');
         const topics = topicsRaw ? JSON.parse(topicsRaw) : [];
@@ -211,6 +211,13 @@ export default {
         const ballotsRaw = await KV.get('ballots');
         const ballots = ballotsRaw ? JSON.parse(ballotsRaw) : [];
 
+        // 判断是否有权查看真实票数（投过票或管理员）
+        let hasVoted = false;
+        if (voterToken) {
+          hasVoted = ballots.some(b => b.voterId === voterToken || b.voterToken === voterToken);
+        }
+        const canViewCounts = hasVoted || isAdmin;
+
         const counts = {};
         topics.forEach(t => counts[t.id] = 0);
         ballots.forEach(b => {
@@ -221,163 +228,45 @@ export default {
 
         const totalVotesCast = Object.values(counts).reduce((a, b) => a + b, 0);
 
-        const enrichedTopics = topics.map(t => ({
-          ...t,
-          stats: {
-            count: counts[t.id] || 0,
-            percentage: totalVotesCast > 0 ? Math.round(((counts[t.id] || 0) / totalVotesCast) * 100) : 0
-          }
-        }));
-
-        return jsonResponse({ success: true, topics: enrichedTopics });
-      }
-
-      // 3. POST /api/auth/register & POST /api/auth/login
-      if (path === '/api/auth/register' && method === 'POST') {
-        const body = await request.json();
-        const { username, displayName, password } = body;
-        if (!username || !password) {
-          return jsonResponse({ error: '学号/用户名与密码不能为空' }, 400);
-        }
-
-        const usersRaw = await KV.get('users');
-        const users = usersRaw ? JSON.parse(usersRaw) : [];
-
-        if (users.some(u => u.username.toLowerCase() === username.trim().toLowerCase())) {
-          return jsonResponse({ error: '该学号/用户名已登记，请直接登录' }, 400);
-        }
-
-        const passHash = await hashPassword(password);
-        const newUser = {
-          id: 'user-' + Date.now(),
-          username: username.trim(),
-          displayName: (displayName && displayName.trim()) || username.trim(),
-          role: 'voter',
-          passwordHash: passHash,
-          createdAt: new Date().toISOString()
-        };
-
-        users.push(newUser);
-        await KV.put('users', JSON.stringify(users));
-
-        const token = createToken(newUser);
-        return jsonResponse({
-          success: true,
-          message: '登记成功！欢迎参与投票',
-          token,
-          user: { id: newUser.id, username: newUser.username, displayName: newUser.displayName, role: newUser.role }
+        // 读取所有公开留言统计
+        const commentsRaw = await KV.get('comments');
+        const allComments = commentsRaw ? JSON.parse(commentsRaw) : [];
+        const commentCounts = {};
+        allComments.forEach(c => {
+          commentCounts[c.topicId] = (commentCounts[c.topicId] || 0) + 1;
         });
-      }
 
-      if (path === '/api/auth/login' && method === 'POST') {
-        const body = await request.json();
-        const { username, password } = body;
-
-        // 特殊管理员快速通道
-        if (username === 'admin' && password === 'admin123') {
-          const adminUser = { id: 'admin-root', username: 'admin', displayName: '总管理员', role: 'admin' };
-          const token = createToken(adminUser);
-          return jsonResponse({ success: true, message: '管理员登录成功', token, user: adminUser });
-        }
-
-        const usersRaw = await KV.get('users');
-        const users = usersRaw ? JSON.parse(usersRaw) : [];
-        const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
-
-        const passHash = await hashPassword(password);
-        if (!user || (user.passwordHash !== passHash && user.passwordHash !== password)) {
-          return jsonResponse({ error: '学号/用户名或密码错误' }, 401);
-        }
-
-        const token = createToken(user);
-        return jsonResponse({
-          success: true,
-          message: '登录成功',
-          token,
-          user: { id: user.id, username: user.username, displayName: user.displayName, role: user.role }
+        const enrichedTopics = topics.map(t => {
+          const voteCount = counts[t.id] || 0;
+          return {
+            ...t,
+            commentCount: commentCounts[t.id] || 0,
+            stats: {
+              locked: !canViewCounts,
+              count: canViewCounts ? voteCount : null,
+              percentage: canViewCounts && totalVotesCast > 0 ? Math.round((voteCount / totalVotesCast) * 100) : null
+            }
+          };
         });
+
+        return jsonResponse({ success: true, topics: enrichedTopics, locked: !canViewCounts });
       }
 
-      // 4. POST /api/vote (投票：选民敏感信息 AES-256 加密存盘)
-      if (path === '/api/vote' && method === 'POST') {
-        const user = parseUserFromHeader(request);
-        if (!user) {
-          return jsonResponse({ error: '请先登录或登记身份后再投票' }, 401);
-        }
-
-        const settingsRaw = await KV.get('settings');
-        const settings = settingsRaw ? JSON.parse(settingsRaw) : { maxVotesPerUser: 3, status: 'open', allowChangeVote: true };
-
-        if (settings.status === 'closed') {
-          return jsonResponse({ error: '投票已截止并锁定' }, 400);
-        }
-        if (settings.status === 'paused') {
-          return jsonResponse({ error: '投票暂缓进行中' }, 400);
-        }
-
-        const body = await request.json();
-        const { topicIds } = body;
-        if (!Array.isArray(topicIds) || topicIds.length === 0) {
-          return jsonResponse({ error: '请至少选择一个社课主题' }, 400);
-        }
-        if (topicIds.length > (settings.maxVotesPerUser || 3)) {
-          return jsonResponse({ error: `至多可投 ${settings.maxVotesPerUser || 3} 票` }, 400);
-        }
-
-        const topicsRaw = await KV.get('topics');
-        const topics = topicsRaw ? JSON.parse(topicsRaw) : [];
-        const topicMap = {};
-        topics.forEach(t => topicMap[t.id] = t.title);
-
-        const ballotsRaw = await KV.get('ballots');
-        let ballots = ballotsRaw ? JSON.parse(ballotsRaw) : [];
-
-        const existingIndex = ballots.findIndex(b => b.voterId === user.id);
-        if (existingIndex > -1 && !settings.allowChangeVote) {
-          return jsonResponse({ error: '本次投票不允许修改已提交的选票' }, 400);
-        }
-
-        // 使用 AES-256 加密选民隐私信息（学号、姓名）防外泄
-        const encryptedVoterName = await encryptData(user.displayName, secretKey);
-        const encryptedVoterUsername = await encryptData(user.username, secretKey);
-
-        const ballot = {
-          id: existingIndex > -1 ? ballots[existingIndex].id : 'ballot-' + Date.now(),
-          voterId: user.id,
-          encryptedVoterUsername,
-          encryptedVoterName,
-          topicIds: topicIds,
-          topicTitles: topicIds.map(id => topicMap[id] || id),
-          votedAt: new Date().toISOString()
-        };
-
-        if (existingIndex > -1) {
-          ballots[existingIndex] = ballot;
-        } else {
-          ballots.push(ballot);
-        }
-
-        await KV.put('ballots', JSON.stringify(ballots));
-
-        return jsonResponse({
-          success: true,
-          message: existingIndex > -1 ? '您的选票已成功更新！' : '选票提交成功！感谢支持心仪社课',
-          vote: {
-            ...ballot,
-            voterName: user.displayName,
-            voterUsername: user.username
-          }
-        });
-      }
-
-      // 5. GET /api/results (实时榜单)
+      // 3. GET /api/results (实时热度排行榜，投前保密)
       if (path === '/api/results' && method === 'GET') {
-        const topicsRaw = await KV.get('topics');
-        const topics = topicsRaw ? JSON.parse(topicsRaw) : [];
-
         const ballotsRaw = await KV.get('ballots');
         const ballots = ballotsRaw ? JSON.parse(ballotsRaw) : [];
 
+        let hasVoted = false;
+        if (voterToken) {
+          hasVoted = ballots.some(b => b.voterId === voterToken || b.voterToken === voterToken);
+        }
+
+        const canViewCounts = hasVoted || isAdmin;
+
+        const topicsRaw = await KV.get('topics');
+        const topics = topicsRaw ? JSON.parse(topicsRaw) : [];
+
         const counts = {};
         topics.forEach(t => counts[t.id] = 0);
         ballots.forEach(b => {
@@ -387,6 +276,19 @@ export default {
         });
 
         const totalVotesCast = Object.values(counts).reduce((a, b) => a + b, 0);
+
+        if (!canViewCounts) {
+          return jsonResponse({
+            success: true,
+            locked: true,
+            message: '投出你的心仪选票后，即刻解锁实时热度排行！',
+            stats: {
+              totalVoters: ballots.length,
+              totalVotesCast,
+              topicStats: []
+            }
+          });
+        }
 
         const topicStats = topics.map(t => {
           const count = counts[t.id] || 0;
@@ -403,6 +305,7 @@ export default {
 
         return jsonResponse({
           success: true,
+          locked: false,
           stats: {
             totalVoters: ballots.length,
             totalVotesCast,
@@ -411,11 +314,167 @@ export default {
         });
       }
 
-      // 6. 管理员接口
+      // 4. POST /api/vote (零门槛匿名投票，支持同设备修改覆盖与心愿留言)
+      if (path === '/api/vote' && method === 'POST') {
+        const body = await request.json();
+        const clientToken = voterToken || body.voterToken || ('anon-' + Math.random().toString(36).slice(2, 12));
+        const { topicIds, comment } = body;
+
+        const settingsRaw = await KV.get('settings');
+        const settings = settingsRaw ? JSON.parse(settingsRaw) : { maxVotesPerUser: 3, status: 'open', allowChangeVote: true };
+
+        if (settings.status === 'closed') {
+          return jsonResponse({ error: '投票已截止并锁定' }, 400);
+        }
+        if (settings.status === 'paused') {
+          return jsonResponse({ error: '投票暂缓进行中' }, 400);
+        }
+
+        if (!Array.isArray(topicIds) || topicIds.length === 0) {
+          return jsonResponse({ error: '请至少选择 1 门心仪社课' }, 400);
+        }
+        if (topicIds.length > (settings.maxVotesPerUser || 3)) {
+          return jsonResponse({ error: `至多可选择 ${settings.maxVotesPerUser || 3} 门社课` }, 400);
+        }
+
+        const topicsRaw = await KV.get('topics');
+        const topics = topicsRaw ? JSON.parse(topicsRaw) : [];
+        const topicMap = {};
+        topics.forEach(t => topicMap[t.id] = t.title);
+
+        const ballotsRaw = await KV.get('ballots');
+        let ballots = ballotsRaw ? JSON.parse(ballotsRaw) : [];
+
+        const existingIndex = ballots.findIndex(b => b.voterId === clientToken || b.voterToken === clientToken);
+        if (existingIndex > -1 && !settings.allowChangeVote) {
+          return jsonResponse({ error: '本次投票设定为不可修改已提交选票' }, 400);
+        }
+
+        // 加密设备令牌标识
+        const encryptedToken = await encryptData(clientToken, secretKey);
+
+        const ballot = {
+          id: existingIndex > -1 ? ballots[existingIndex].id : 'ballot-' + Date.now(),
+          voterId: clientToken,
+          voterToken: clientToken,
+          encryptedToken,
+          topicIds,
+          topicTitles: topicIds.map(id => topicMap[id] || id),
+          comment: (comment && comment.trim()) || '',
+          votedAt: new Date().toISOString()
+        };
+
+        if (existingIndex > -1) {
+          ballots[existingIndex] = ballot;
+        } else {
+          ballots.push(ballot);
+        }
+
+        await KV.put('ballots', JSON.stringify(ballots));
+
+        // 如果用户同时输入了心愿留言，写入公开留言墙
+        if (comment && comment.trim()) {
+          const commentsRaw = await KV.get('comments');
+          let comments = commentsRaw ? JSON.parse(commentsRaw) : [];
+          // 为每个选中的主题各挂载一条心愿，或首个选中的主题
+          topicIds.forEach(tid => {
+            comments.unshift({
+              id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+              topicId: tid,
+              voterId: clientToken,
+              authorName: '朋辈学友',
+              text: comment.trim(),
+              createdAt: new Date().toISOString()
+            });
+          });
+          // 限制保留最新 200 条留言
+          if (comments.length > 200) comments = comments.slice(0, 200);
+          await KV.put('comments', JSON.stringify(comments));
+        }
+
+        return jsonResponse({
+          success: true,
+          message: existingIndex > -1 ? '您的选票已成功更新！' : '选票投出成功！已为您揭晓实时热度榜',
+          voterToken: clientToken,
+          hasVoted: true,
+          vote: ballot
+        });
+      }
+
+      // 5. GET /api/topics/:id/comments & POST /api/topics/:id/comments (公开社课心愿留言墙)
+      if (path.startsWith('/api/topics/') && path.endsWith('/comments')) {
+        const parts = path.split('/');
+        const topicId = parts[3];
+
+        if (method === 'GET') {
+          const commentsRaw = await KV.get('comments');
+          const comments = commentsRaw ? JSON.parse(commentsRaw) : [];
+          const topicComments = comments
+            .filter(c => c.topicId === topicId)
+            .map(c => ({
+              id: c.id,
+              text: c.text,
+              authorName: c.authorName || '朋辈学友',
+              createdAt: c.createdAt
+            }));
+          return jsonResponse({ success: true, comments: topicComments });
+        }
+
+        if (method === 'POST') {
+          const body = await request.json();
+          const { text } = body;
+          if (!text || !text.trim()) {
+            return jsonResponse({ error: '留言内容不能为空' }, 400);
+          }
+
+          const commentsRaw = await KV.get('comments');
+          let comments = commentsRaw ? JSON.parse(commentsRaw) : [];
+
+          const newComment = {
+            id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+            topicId,
+            voterId: voterToken || 'anon',
+            authorName: '朋辈学友',
+            text: text.trim().slice(0, 200), // 限制200字
+            createdAt: new Date().toISOString()
+          };
+
+          comments.unshift(newComment);
+          if (comments.length > 300) comments = comments.slice(0, 300);
+          await KV.put('comments', JSON.stringify(comments));
+
+          return jsonResponse({ success: true, message: '留言已发布！', comment: newComment });
+        }
+      }
+
+      // 6. 管理员登录
+      if (path === '/api/auth/login' && method === 'POST') {
+        const body = await request.json();
+        const { username, password } = body;
+        if (username === 'admin' && password === 'admin123') {
+          const adminObj = { id: 'admin-root', username: 'admin', displayName: '总管理员', role: 'admin' };
+          const token = createToken(adminObj);
+          return jsonResponse({ success: true, message: '管理员登录成功', token, user: adminObj });
+        }
+        return jsonResponse({ error: '管理员账号或密码错误' }, 401);
+      }
+
+      // 7. 管理员高级操作
       if (path.startsWith('/api/admin')) {
-        const user = parseUserFromHeader(request);
-        if (!user || user.role !== 'admin') {
+        if (!isAdmin) {
           return jsonResponse({ error: '需要管理员权限' }, 403);
+        }
+
+        if (path === '/api/admin/ballots' && method === 'GET') {
+          const ballotsRaw = await KV.get('ballots');
+          const ballots = ballotsRaw ? JSON.parse(ballotsRaw) : [];
+          return jsonResponse({ success: true, ballots });
+        }
+
+        if (path === '/api/admin/clear-votes' && method === 'POST') {
+          await KV.put('ballots', JSON.stringify([]));
+          await KV.put('comments', JSON.stringify([]));
+          return jsonResponse({ success: true, message: '所有选票与心愿留言已清空重置' });
         }
 
         if (path === '/api/admin/settings' && method === 'PUT') {
@@ -423,58 +482,6 @@ export default {
           newSettings.updatedAt = new Date().toISOString();
           await KV.put('settings', JSON.stringify(newSettings));
           return jsonResponse({ success: true, settings: newSettings });
-        }
-
-        if (path === '/api/admin/ballots' && method === 'GET') {
-          const ballotsRaw = await KV.get('ballots');
-          const ballots = ballotsRaw ? JSON.parse(ballotsRaw) : [];
-          const decryptedBallots = await Promise.all(ballots.map(async b => ({
-            id: b.id,
-            voterUsername: b.encryptedVoterUsername ? await decryptData(b.encryptedVoterUsername, secretKey) : (b.voterUsername || '已加密保护'),
-            voterDisplayName: b.encryptedVoterName ? await decryptData(b.encryptedVoterName, secretKey) : (b.voterName || '已加密保护'),
-            topicIds: b.topicIds,
-            topicTitles: b.topicTitles,
-            votedAt: b.votedAt
-          })));
-          return jsonResponse({ success: true, ballots: decryptedBallots });
-        }
-
-        if (path === '/api/admin/clear-votes' && method === 'POST') {
-          await KV.put('ballots', JSON.stringify([]));
-          return jsonResponse({ success: true, message: '所有选票数据已清空' });
-        }
-
-        if (path === '/api/admin/topics' && method === 'POST') {
-          const newTopic = await request.json();
-          newTopic.id = 'topic-' + Date.now();
-          newTopic.createdAt = new Date().toISOString();
-          const topicsRaw = await KV.get('topics');
-          const topics = topicsRaw ? JSON.parse(topicsRaw) : [];
-          topics.push(newTopic);
-          await KV.put('topics', JSON.stringify(topics));
-          return jsonResponse({ success: true, topic: newTopic });
-        }
-
-        if (path.startsWith('/api/admin/topics/') && method === 'PUT') {
-          const id = path.replace('/api/admin/topics/', '');
-          const updated = await request.json();
-          const topicsRaw = await KV.get('topics');
-          let topics = topicsRaw ? JSON.parse(topicsRaw) : [];
-          const idx = topics.findIndex(t => t.id === id);
-          if (idx > -1) {
-            topics[idx] = { ...topics[idx], ...updated, id };
-            await KV.put('topics', JSON.stringify(topics));
-          }
-          return jsonResponse({ success: true, topic: topics[idx] });
-        }
-
-        if (path.startsWith('/api/admin/topics/') && method === 'DELETE') {
-          const id = path.replace('/api/admin/topics/', '');
-          const topicsRaw = await KV.get('topics');
-          let topics = topicsRaw ? JSON.parse(topicsRaw) : [];
-          topics = topics.filter(t => t.id !== id);
-          await KV.put('topics', JSON.stringify(topics));
-          return jsonResponse({ success: true, message: '主题已删除' });
         }
       }
 

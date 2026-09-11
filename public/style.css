@@ -643,3 +643,103 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ----------------------------------------------------
+   Amie 2.0 极简折叠卡片与浮动岛增强样式
+   ---------------------------------------------------- */
+
+/* 极简紧凑卡片 */
+.amie-compact-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1.5px solid rgba(228, 228, 231, 0.8);
+  border-radius: 24px;
+  transition: all 0.28s var(--ease-spring);
+  box-shadow: 0 4px 18px -4px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.amie-compact-card:hover {
+  border-color: rgba(161, 161, 170, 0.6);
+  box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  transform: translateY(-2px);
+}
+
+.amie-compact-card.is-selected {
+  border-color: #3b82f6;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 32px -6px rgba(59, 130, 246, 0.18), 0 0 0 1px #3b82f6;
+}
+
+/* 折叠展开层手风琴动画 */
+.amie-accordion-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.35s var(--ease-spring);
+}
+
+.amie-accordion-body.is-open {
+  grid-template-rows: 1fr;
+}
+
+.amie-accordion-inner {
+  overflow: hidden;
+}
+
+/* 居中灵动胶囊浮动岛 (Floating Island Dock) */
+.amie-island-dock {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px 8px 20px;
+  background: rgba(24, 24, 27, 0.94);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  color: #ffffff;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  transition: all 0.35s var(--ease-spring);
+  max-width: 92vw;
+}
+
+.amie-island-dock:hover {
+  transform: translateX(-50%) translateY(-2px);
+  box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.48);
+}
+
+/* 同学心愿留言贴纸 */
+.amie-comment-chip {
+  background: rgba(244, 244, 245, 0.7);
+  border: 1px solid rgba(228, 228, 231, 0.8);
+  border-radius: 16px;
+  padding: 10px 14px;
+  transition: all 0.2s ease;
+}
+
+.amie-comment-chip:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(212, 212, 216, 1);
+  transform: translateY(-1px);
+}
+
+/* 投前朦胧锁定指示器 */
+.amie-locked-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #71717a;
+  background: rgba(244, 244, 245, 0.9);
+  border: 1px dashed #d4d4d8;
+  border-radius: 9999px;
+  padding: 3px 10px;
+}
+
