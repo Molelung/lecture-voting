@@ -353,7 +353,7 @@ router.get('/admin/ballots', requireAdmin, (req, res) => {
 });
 
 // 管理员清空投票数据（重新开局）
-router.post('/admin/clear-votes', requireAdmin, (req, res) => {
+router.post(['/admin/clear-votes', '/admin/reset-votes'], requireAdmin, (req, res) => {
   db.clearAllVotes();
   res.json({ success: true, message: '所有选票已清空，可重新开始新一轮投票' });
 });

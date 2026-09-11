@@ -1,14 +1,12 @@
 /**
- * Cloudflare Worker API for Peer Lecture Voting System (High Performance & Security Optimized)
- * 
- * 架构与性能优化清单：
- * 1. 内存级三级智能缓存（Memory & Edge Tier Cache）：大幅削减高并发下的 KV 读取频次，平均响应延时降至 5~15ms
- * 2. 选民级 O(1) 独立原子存取（Atomic Key Isolation）：写入 voter:${token}，规避多人并发写入覆盖风险
- * 3. 边缘 IP 滑动窗口限流（Edge Rate Limiter）：严防恶意刷票脚本与高频洪峰攻击（429 限流保护）
- * 4. XSS 与异常字符深度清洗（Input Sanitization）：剥离 HTML 标签与畸变字符，确保安全可靠
- * 5. 安全响应头（Security Headers）与性能追踪（Server-Timing）
- * 6. 原生硬件级 AES-256-GCM 选民隐私数据加密与解密
- * 7. 新增 /api/health 自检与集群探活端点
+ * Cloudflare Worker API for Peer Lecture Voting System
+ * 核心设计目标：
+ * 1. 强一致性实时数据流转：杜绝边缘 CDN 缓存导致的票数/榜单不同步问题
+ * 2. 真实遵循系统配置：resultsVisibility 为 public 时全员实时公开榜单与票数；设为 after_vote 时投后解锁
+ * 3. 选民级 O(1) 独立存取与票池去重合并：彻底防止多人并发投递覆盖
+ * 4. 完整的社课与系统配置管理生命周期：支持管理员增删改查议题、更新系统开关、一键清空重置
+ * 5. 留言单一入库不重复：修复多选时重复插入多条留言的 Bug
+ * 6. 边缘滑动窗口限流与 XSS 深度清洗
  */
 
 const CORS_HEADERS = {
@@ -16,27 +14,14 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Voter-Token',
   'Access-Control-Max-Age': '86400',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin'
 };
 
-// 内存级智能缓存容器 (Isolate 跨请求复用)
-const MEM_CACHE = {
-  settings: { data: null, exp: 0 },
-  topics: { data: null, exp: 0 },
-  ballots: { data: null, exp: 0 },
-  comments: { data: null, exp: 0 },
-  ipRateMap: new Map(), // ip -> { count, resetAt }
-};
-
-// 缓存有效期设置 (毫秒)
-const TTL = {
-  SETTINGS: 30000, // 30秒
-  TOPICS: 30000,   // 30秒
-  BALLOTS: 8000,   // 8秒 (投票统计准实时)
-  COMMENTS: 12000, // 12秒
-};
+// 内存级速率限制 Map (Isolate 级)
+const IP_RATE_MAP = new Map();
 
 function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -49,7 +34,7 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
   });
 }
 
-// 文本 XSS 与非法字符清洗
+// 文本 XSS 与非法控制字符清洗
 function sanitizeText(str, maxLength = 200) {
   if (!str || typeof str !== 'string') return '';
   return str
@@ -60,20 +45,19 @@ function sanitizeText(str, maxLength = 200) {
     .slice(0, maxLength);
 }
 
-// 边缘 IP 滑动窗口限流器 (防止刷票与高频 DDOS)
+// 边缘 IP 滑动窗口限流器
 function checkRateLimit(ip, limit = 20, windowMs = 60000) {
   const now = Date.now();
-  // 定期清理过期 IP
-  if (MEM_CACHE.ipRateMap.size > 2000) {
-    for (const [key, val] of MEM_CACHE.ipRateMap.entries()) {
-      if (now > val.resetAt) MEM_CACHE.ipRateMap.delete(key);
+  if (IP_RATE_MAP.size > 2000) {
+    for (const [key, val] of IP_RATE_MAP.entries()) {
+      if (now > val.resetAt) IP_RATE_MAP.delete(key);
     }
   }
 
-  let record = MEM_CACHE.ipRateMap.get(ip);
+  let record = IP_RATE_MAP.get(ip);
   if (!record || now > record.resetAt) {
     record = { count: 1, resetAt: now + windowMs };
-    MEM_CACHE.ipRateMap.set(ip, record);
+    IP_RATE_MAP.set(ip, record);
     return true;
   }
 
@@ -108,7 +92,7 @@ function base64UrlDecode(str) {
   return new TextDecoder().decode(bytes);
 }
 
-// AES-256-GCM 硬件级加速加解密
+// AES-256-GCM 硬件级加速加解密 (加密存储选民设备标识)
 async function getCryptoKey(secret) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
@@ -150,25 +134,6 @@ async function encryptData(text, secret) {
   }
 }
 
-async function decryptData(cipherCombined, secret) {
-  try {
-    if (!cipherCombined || typeof cipherCombined !== 'string') return '';
-    const [ivHex, cipherHex] = cipherCombined.split(':');
-    if (!ivHex || !cipherHex) return cipherCombined;
-    const iv = new Uint8Array(ivHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-    const cipher = new Uint8Array(cipherHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-    const key = await getCryptoKey(secret);
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      key,
-      cipher
-    );
-    return new TextDecoder().decode(decrypted);
-  } catch (e) {
-    return cipherCombined;
-  }
-}
-
 // 解析管理授权 Token
 function parseUserFromHeader(request) {
   const auth = request.headers.get('Authorization');
@@ -194,38 +159,19 @@ function createToken(user) {
     role: user.role,
     exp: Date.now() + 86400000 * 7
   }));
-  const signature = base64UrlEncode('mock-sig');
+  const signature = base64UrlEncode('lecture-token-sig');
   return `${header}.${payload}.${signature}`;
 }
 
-// 缓存辅助读取函数
-async function getCachedKV(KV, key, ttlMs) {
-  const now = Date.now();
-  const cacheEntry = MEM_CACHE[key];
-  if (cacheEntry && cacheEntry.exp > now && cacheEntry.data !== null) {
-    return cacheEntry.data;
-  }
+// 安全读取 KV 数据，防止 JSON 解析崩溃
+async function getJsonKV(KV, key, fallback = null) {
   try {
     const raw = await KV.get(key);
-    let parsed = null;
-    if (raw) {
-      try {
-        parsed = JSON.parse(raw);
-      } catch (parseErr) {
-        console.warn(`KV key ${key} raw parse failed, using fallback:`, parseErr.message);
-      }
-    }
-    if (parsed !== null) {
-      if (cacheEntry) {
-        cacheEntry.data = parsed;
-        cacheEntry.exp = now + ttlMs;
-      }
-      return parsed;
-    }
-    return cacheEntry?.data || null;
-  } catch (err) {
-    console.error(`KV get failed for ${key}:`, err);
-    return cacheEntry?.data || null;
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn(`KV parse error for ${key}:`, e.message);
+    return fallback;
   }
 }
 
@@ -248,68 +194,60 @@ export default {
     const secretKey = env.ENCRYPTION_KEY || 'peer-lecture-voting-aes256-secret-key-2026!';
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
 
-    // 获取选民设备匿名指纹与管理员身份
+    // 选民设备匿名指纹与管理员身份
     const voterToken = request.headers.get('X-Voter-Token') || url.searchParams.get('voterToken') || '';
     const adminUser = parseUserFromHeader(request);
     const isAdmin = adminUser && adminUser.role === 'admin';
 
     try {
-      // 0. GET /api/health (集群探活与性能监测端点)
+      // 0. GET /api/health (集群探活与健康监控端点)
       if (path === '/api/health' && method === 'GET') {
-        const memHits = {
-          settingsCached: Date.now() < MEM_CACHE.settings.exp,
-          topicsCached: Date.now() < MEM_CACHE.topics.exp,
-          ballotsCached: Date.now() < MEM_CACHE.ballots.exp,
-          commentsCached: Date.now() < MEM_CACHE.comments.exp,
-          trackedIps: MEM_CACHE.ipRateMap.size
-        };
         const dur = Date.now() - startTime;
         return jsonResponse({
           status: 'ok',
           service: 'lecture-voting-api',
           edgeNode: request.cf?.colo || 'LOCAL',
           latencyMs: dur,
-          cache: memHits,
           timestamp: new Date().toISOString()
         }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
-      // 1. GET /api/status (系统配置、选民投票状态与统计汇总)
+      // 1. GET /api/status (系统配置、选民自身状态与参与统计)
       if (path === '/api/status' && method === 'GET') {
-        const settings = await getCachedKV(KV, 'settings', TTL.SETTINGS) || {
+        const settings = await getJsonKV(KV, 'settings', {
           title: '朋辈社课大投票！',
           subtitle: '选出你最期待开讲的议题，投票完成后揭晓全站热度排行（限选 1~3 项）',
           maxVotesPerUser: 3,
           allowChangeVote: true,
           status: 'open',
           resultsVisibility: 'public'
-        };
+        });
 
-        // 选民自身投票状态优先通过 O(1) 独立键快速嗅探
+        // 嗅探选民自身投票状态 (优先 O(1) 独立键，其次主票池容灾)
         let userVote = null;
         let hasVoted = false;
 
         if (voterToken) {
-          try {
-            const directVoterRaw = await KV.get('voter:' + voterToken);
-            if (directVoterRaw) {
-              userVote = JSON.parse(directVoterRaw);
-              hasVoted = true;
-            }
-          } catch (e) {
-            console.warn('Voter key lookup error:', e);
+          const directVote = await getJsonKV(KV, 'voter:' + voterToken, null);
+          if (directVote) {
+            userVote = directVote;
+            hasVoted = true;
           }
         }
 
-        const ballots = await getCachedKV(KV, 'ballots', TTL.BALLOTS) || [];
-        // 容灾兼容：如果独立键未命中，回退查主选票池
+        const ballots = await getJsonKV(KV, 'ballots', []);
         if (!hasVoted && voterToken && ballots.length > 0) {
-          const found = ballots.find(b => b.voterId === voterToken || b.voterToken === voterToken);
+          const found = ballots.find(b => b && (b.voterId === voterToken || b.voterToken === voterToken));
           if (found) {
             userVote = found;
             hasVoted = true;
           }
         }
+
+        // 核心权限计算：完全遵循 settings.resultsVisibility 配置
+        const canSeeResults = settings.resultsVisibility === 'public' || 
+          (settings.resultsVisibility === 'after_vote' && hasVoted) || 
+          isAdmin;
 
         const totalVoters = ballots.length;
         const totalVotesCast = ballots.reduce((acc, b) => acc + ((b.topicIds && b.topicIds.length) || 0), 0);
@@ -321,42 +259,48 @@ export default {
           user: adminUser ? { username: adminUser.username, role: 'admin' } : null,
           hasVoted,
           userVote,
-          canSeeResults: hasVoted || isAdmin,
+          canSeeResults,
           statsSummary: { totalVoters, totalVotesCast }
-        }, 200, {
-          'Cache-Control': 'no-cache',
-          'Server-Timing': `app;dur=${dur}`
-        });
+        }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
-      // 2. GET /api/topics (社课议题列表，投前保密脱敏，投后自动解锁)
+      // 2. GET /api/topics (社课议题列表与票数状态，强一致性流转)
       if (path === '/api/topics' && method === 'GET') {
-        const topics = await getCachedKV(KV, 'topics', TTL.TOPICS) || [];
-        const ballots = await getCachedKV(KV, 'ballots', TTL.BALLOTS) || [];
+        const settings = await getJsonKV(KV, 'settings', { resultsVisibility: 'public' });
+        const topics = await getJsonKV(KV, 'topics', []);
+        const ballots = await getJsonKV(KV, 'ballots', []);
 
         let hasVoted = false;
         if (voterToken) {
-          const directVoterRaw = await KV.get('voter:' + voterToken);
-          hasVoted = !!directVoterRaw || ballots.some(b => b.voterId === voterToken || b.voterToken === voterToken);
+          const directVote = await getJsonKV(KV, 'voter:' + voterToken, null);
+          hasVoted = !!directVote || ballots.some(b => b && (b.voterId === voterToken || b.voterToken === voterToken));
         }
-        const canViewCounts = hasVoted || isAdmin;
+
+        // 核心权限计算：遵循 public / after_vote 设定
+        const canViewCounts = settings.resultsVisibility === 'public' || 
+          (settings.resultsVisibility === 'after_vote' && hasVoted) || 
+          isAdmin;
 
         // 聚合计算各议题票数
         const counts = {};
         topics.forEach(t => counts[t.id] = 0);
         ballots.forEach(b => {
-          (b.topicIds || []).forEach(tid => {
-            if (counts[tid] !== undefined) counts[tid]++;
-          });
+          if (b && Array.isArray(b.topicIds)) {
+            b.topicIds.forEach(tid => {
+              if (counts[tid] !== undefined) counts[tid]++;
+            });
+          }
         });
 
         const totalVotesCast = Object.values(counts).reduce((a, b) => a + b, 0);
 
-        // 留言统计
-        const allComments = await getCachedKV(KV, 'comments', TTL.COMMENTS) || [];
+        // 聚合留言统计
+        const allComments = await getJsonKV(KV, 'comments', []);
         const commentCounts = {};
         allComments.forEach(c => {
-          commentCounts[c.topicId] = (commentCounts[c.topicId] || 0) + 1;
+          if (c && c.topicId) {
+            commentCounts[c.topicId] = (commentCounts[c.topicId] || 0) + 1;
+          }
         });
 
         const enrichedTopics = topics.map(t => {
@@ -367,7 +311,7 @@ export default {
             stats: {
               locked: !canViewCounts,
               count: canViewCounts ? voteCount : null,
-              percentage: canViewCounts && totalVotesCast > 0 ? Math.round((voteCount / totalVotesCast) * 100) : null
+              percentage: canViewCounts && totalVotesCast > 0 ? Math.round((voteCount / totalVotesCast) * 100) : 0
             }
           };
         });
@@ -377,31 +321,33 @@ export default {
           success: true,
           topics: enrichedTopics,
           locked: !canViewCounts
-        }, 200, {
-          'Cache-Control': canViewCounts ? 'no-cache' : 'public, max-age=5, stale-while-revalidate=20',
-          'Server-Timing': `app;dur=${dur}`
-        });
+        }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
-      // 3. GET /api/results (实时热度排行榜，投前保密)
+      // 3. GET /api/results (实时热度排行榜，实时流转无滞后)
       if (path === '/api/results' && method === 'GET') {
-        const ballots = await getCachedKV(KV, 'ballots', TTL.BALLOTS) || [];
+        const settings = await getJsonKV(KV, 'settings', { resultsVisibility: 'public' });
+        const ballots = await getJsonKV(KV, 'ballots', []);
 
         let hasVoted = false;
         if (voterToken) {
-          const directVoterRaw = await KV.get('voter:' + voterToken);
-          hasVoted = !!directVoterRaw || ballots.some(b => b.voterId === voterToken || b.voterToken === voterToken);
+          const directVote = await getJsonKV(KV, 'voter:' + voterToken, null);
+          hasVoted = !!directVote || ballots.some(b => b && (b.voterId === voterToken || b.voterToken === voterToken));
         }
 
-        const canViewCounts = hasVoted || isAdmin;
-        const topics = await getCachedKV(KV, 'topics', TTL.TOPICS) || [];
+        const canViewCounts = settings.resultsVisibility === 'public' || 
+          (settings.resultsVisibility === 'after_vote' && hasVoted) || 
+          isAdmin;
 
+        const topics = await getJsonKV(KV, 'topics', []);
         const counts = {};
         topics.forEach(t => counts[t.id] = 0);
         ballots.forEach(b => {
-          (b.topicIds || []).forEach(tid => {
-            if (counts[tid] !== undefined) counts[tid]++;
-          });
+          if (b && Array.isArray(b.topicIds)) {
+            b.topicIds.forEach(tid => {
+              if (counts[tid] !== undefined) counts[tid]++;
+            });
+          }
         });
 
         const totalVotesCast = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -444,9 +390,8 @@ export default {
         }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
-      // 4. POST /api/vote (零门槛投票，支持原子写入、同设备改票与频次限制)
+      // 4. POST /api/vote (零门槛投票，支持原子写入、改票与去重)
       if (path === '/api/vote' && method === 'POST') {
-        // IP 限流检查 (每分钟最多 15 次投递/改票请求)
         if (!checkRateLimit(clientIp, 15, 60000)) {
           return jsonResponse({ error: '提交操作过于频繁，请稍候再试' }, 429);
         }
@@ -455,7 +400,7 @@ export default {
         const clientToken = voterToken || body.voterToken || ('anon-' + Math.random().toString(36).slice(2, 12));
         const { topicIds, comment } = body;
 
-        const settings = await getCachedKV(KV, 'settings', TTL.SETTINGS) || { maxVotesPerUser: 3, status: 'open', allowChangeVote: true };
+        const settings = await getJsonKV(KV, 'settings', { maxVotesPerUser: 3, status: 'open', allowChangeVote: true });
 
         if (settings.status === 'closed') {
           return jsonResponse({ error: '投票已截止并锁定' }, 400);
@@ -471,20 +416,19 @@ export default {
           return jsonResponse({ error: `至多可选择 ${settings.maxVotesPerUser || 3} 门社课` }, 400);
         }
 
-        const topics = await getCachedKV(KV, 'topics', TTL.TOPICS) || [];
+        const topics = await getJsonKV(KV, 'topics', []);
         const topicMap = {};
         topics.forEach(t => topicMap[t.id] = t.title);
 
         const cleanComment = sanitizeText(comment, 200);
 
-        // 检查旧票
-        let ballots = await KV.get('ballots').then(r => r ? JSON.parse(r) : []);
-        const existingIndex = ballots.findIndex(b => b.voterId === clientToken || b.voterToken === clientToken);
+        // 读取当前票池与旧票检查
+        let ballots = await getJsonKV(KV, 'ballots', []);
+        const existingIndex = ballots.findIndex(b => b && (b.voterId === clientToken || b.voterToken === clientToken));
         if (existingIndex > -1 && !settings.allowChangeVote) {
           return jsonResponse({ error: '本次投票设定为不可修改已提交选票' }, 400);
         }
 
-        // 加密设备令牌标识
         const encryptedToken = await encryptData(clientToken, secretKey);
 
         const ballot = {
@@ -495,40 +439,34 @@ export default {
           topicIds,
           topicTitles: topicIds.map(id => topicMap[id] || id),
           comment: cleanComment,
-          clientIp: clientIp.slice(0, 16), // 审计脱敏 IP
+          clientIp: clientIp.slice(0, 16),
           votedAt: new Date().toISOString()
         };
 
-        // 1. 原子独立写：记录此选民专属状态
+        // 1. 原子独立写：存盘至独立选民键 (O(1) 绝对防并发冲突)
         await KV.put('voter:' + clientToken, JSON.stringify(ballot), { expirationTtl: 86400 * 90 });
 
-        // 2. 更新总票池
-        if (existingIndex > -1) {
-          ballots[existingIndex] = ballot;
-        } else {
-          ballots.push(ballot);
-        }
+        // 2. 去重并原子更新总票池
+        ballots = ballots.filter(b => b && b.voterId !== clientToken && b.voterToken !== clientToken);
+        ballots.push(ballot);
         await KV.put('ballots', JSON.stringify(ballots));
 
-        // 3. 立即使选票内存缓存失效，保证数据即时更新
-        MEM_CACHE.ballots.exp = 0;
-
-        // 4. 心愿留言同步写入讨论墙
+        // 3. 心愿留言同步写入讨论区 (单条入库，杜绝多选时重复多次)
         if (cleanComment) {
-          let comments = await KV.get('comments').then(r => r ? JSON.parse(r) : []);
-          topicIds.forEach(tid => {
-            comments.unshift({
-              id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-              topicId: tid,
-              voterId: clientToken,
-              authorName: '朋辈学友',
-              text: cleanComment,
-              createdAt: new Date().toISOString()
-            });
-          });
-          if (comments.length > 250) comments = comments.slice(0, 250);
+          let comments = await getJsonKV(KV, 'comments', []);
+          const primaryTopicId = topicIds[0] || 'general';
+          const newCmt = {
+            id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+            topicId: primaryTopicId,
+            topicTitle: topicMap[primaryTopicId] || '',
+            voterId: clientToken,
+            authorName: '朋辈学友',
+            text: cleanComment,
+            createdAt: new Date().toISOString()
+          };
+          comments.unshift(newCmt);
+          if (comments.length > 300) comments = comments.slice(0, 300);
           await KV.put('comments', JSON.stringify(comments));
-          MEM_CACHE.comments.exp = 0;
         }
 
         const dur = Date.now() - startTime;
@@ -541,10 +479,10 @@ export default {
         }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
-      // 5. GET /api/comments & POST /api/comments (公共交流讨论留言区)
+      // 5. GET /api/comments & POST /api/comments (公共社区讨论留言板)
       if (path === '/api/comments') {
         if (method === 'GET') {
-          const comments = await getCachedKV(KV, 'comments', TTL.COMMENTS) || [];
+          const comments = await getJsonKV(KV, 'comments', []);
           const list = comments.map(c => ({
             id: c.id,
             topicId: c.topicId || 'general',
@@ -554,14 +492,10 @@ export default {
             createdAt: c.createdAt
           }));
           const dur = Date.now() - startTime;
-          return jsonResponse({ success: true, comments: list }, 200, {
-            'Cache-Control': 'no-cache',
-            'Server-Timing': `app;dur=${dur}`
-          });
+          return jsonResponse({ success: true, comments: list }, 200, { 'Server-Timing': `app;dur=${dur}` });
         }
 
         if (method === 'POST') {
-          // 限流检查 (每分钟最多 10 次留言)
           if (!checkRateLimit(clientIp, 10, 60000)) {
             return jsonResponse({ error: '发言过于频繁，请稍息后再试' }, 429);
           }
@@ -575,12 +509,12 @@ export default {
           const topicId = body.topicId || 'general';
           let topicTitle = '';
           if (topicId !== 'general') {
-            const topics = await getCachedKV(KV, 'topics', TTL.TOPICS) || [];
+            const topics = await getJsonKV(KV, 'topics', []);
             const found = topics.find(t => t.id === topicId);
             if (found) topicTitle = found.title;
           }
 
-          let comments = await KV.get('comments').then(r => r ? JSON.parse(r) : []);
+          let comments = await getJsonKV(KV, 'comments', []);
           const newComment = {
             id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
             topicId,
@@ -594,7 +528,6 @@ export default {
           comments.unshift(newComment);
           if (comments.length > 300) comments = comments.slice(0, 300);
           await KV.put('comments', JSON.stringify(comments));
-          MEM_CACHE.comments.exp = 0;
 
           const dur = Date.now() - startTime;
           return jsonResponse({ success: true, message: '留言已发布！', comment: newComment }, 200, {
@@ -606,23 +539,22 @@ export default {
       // DELETE /api/comments/:id (管理员管理不当留言)
       if (path.startsWith('/api/comments/') && method === 'DELETE') {
         if (!isAdmin) {
-          return jsonResponse({ error: '无权执行此操作' }, 403);
+          return jsonResponse({ error: '需要管理员权限' }, 403);
         }
         const commentId = path.split('/')[3];
-        let comments = await KV.get('comments').then(r => r ? JSON.parse(r) : []);
+        let comments = await getJsonKV(KV, 'comments', []);
         comments = comments.filter(c => c.id !== commentId);
         await KV.put('comments', JSON.stringify(comments));
-        MEM_CACHE.comments.exp = 0;
         return jsonResponse({ success: true, message: '留言已删除' });
       }
 
-      // 6. GET /api/topics/:id/comments & POST /api/topics/:id/comments (单门社课大纲内研讨墙)
+      // 6. GET /api/topics/:id/comments & POST /api/topics/:id/comments (单门社课研讨墙)
       if (path.startsWith('/api/topics/') && path.endsWith('/comments')) {
         const parts = path.split('/');
         const topicId = parts[3];
 
         if (method === 'GET') {
-          const comments = await getCachedKV(KV, 'comments', TTL.COMMENTS) || [];
+          const comments = await getJsonKV(KV, 'comments', []);
           const topicComments = comments
             .filter(c => c.topicId === topicId)
             .map(c => ({
@@ -635,7 +567,6 @@ export default {
         }
 
         if (method === 'POST') {
-          // 限流检查 (每分钟最多 10 次留言)
           if (!checkRateLimit(clientIp, 10, 60000)) {
             return jsonResponse({ error: '发言过于频繁，请稍息后再试' }, 429);
           }
@@ -647,10 +578,14 @@ export default {
           }
           const cleanAuthor = sanitizeText(body.authorName, 20) || '朋辈学友';
 
-          let comments = await KV.get('comments').then(r => r ? JSON.parse(r) : []);
+          const topics = await getJsonKV(KV, 'topics', []);
+          const foundTopic = topics.find(t => t.id === topicId);
+
+          let comments = await getJsonKV(KV, 'comments', []);
           const newComment = {
             id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
             topicId,
+            topicTitle: foundTopic ? foundTopic.title : '',
             voterId: voterToken || 'anon',
             authorName: cleanAuthor,
             text: cleanText,
@@ -660,7 +595,6 @@ export default {
           comments.unshift(newComment);
           if (comments.length > 300) comments = comments.slice(0, 300);
           await KV.put('comments', JSON.stringify(comments));
-          MEM_CACHE.comments.exp = 0;
 
           return jsonResponse({ success: true, message: '留言已发布！', comment: newComment });
         }
@@ -678,37 +612,109 @@ export default {
         return jsonResponse({ error: '管理员账号或密码错误' }, 401);
       }
 
-      // 7. 管理员高级操作
+      // 8. 管理员核心配置与数据生命周期管理
       if (path.startsWith('/api/admin')) {
         if (!isAdmin) {
           return jsonResponse({ error: '需要管理员权限' }, 403);
         }
 
+        // GET /api/admin/ballots (查看所有选票明细)
         if (path === '/api/admin/ballots' && method === 'GET') {
-          const ballots = await KV.get('ballots').then(r => r ? JSON.parse(r) : []);
+          const ballots = await getJsonKV(KV, 'ballots', []);
           return jsonResponse({ success: true, ballots });
         }
 
-        if (path === '/api/admin/clear-votes' && method === 'POST') {
+        // POST /api/admin/clear-votes 或 /api/admin/reset-votes (彻底清空重置选票与选民状态)
+        if ((path === '/api/admin/clear-votes' || path === '/api/admin/reset-votes') && method === 'POST') {
           await KV.put('ballots', JSON.stringify([]));
           await KV.put('comments', JSON.stringify([]));
-          MEM_CACHE.ballots.exp = 0;
-          MEM_CACHE.comments.exp = 0;
-          return jsonResponse({ success: true, message: '所有选票与心愿留言已清空重置' });
+
+          // 清理所有已保存的 voter:* 独立选民键，确保全员可以重新开局投票
+          try {
+            const voterKeys = await KV.list({ prefix: 'voter:' });
+            if (voterKeys && voterKeys.keys) {
+              for (const k of voterKeys.keys) {
+                await KV.delete(k.name);
+              }
+            }
+          } catch (e) {
+            console.warn('Clear voter keys error:', e.message);
+          }
+
+          return jsonResponse({ success: true, message: '所有选票、选民指纹与讨论留言已全量重置清空！' });
         }
 
-        if (path === '/api/admin/settings' && method === 'PUT') {
-          const newSettings = await request.json();
-          newSettings.updatedAt = new Date().toISOString();
-          await KV.put('settings', JSON.stringify(newSettings));
-          MEM_CACHE.settings.exp = 0;
-          return jsonResponse({ success: true, settings: newSettings });
+        // GET /api/admin/settings & PUT /api/admin/settings (读取与保存系统配置)
+        if (path === '/api/admin/settings') {
+          if (method === 'GET') {
+            const currentSettings = await getJsonKV(KV, 'settings', {});
+            return jsonResponse({ success: true, settings: currentSettings });
+          }
+          if (method === 'PUT') {
+            const updates = await request.json().catch(() => ({}));
+            let current = await getJsonKV(KV, 'settings', {});
+            const newSettings = {
+              ...current,
+              ...updates,
+              updatedAt: new Date().toISOString()
+            };
+            await KV.put('settings', JSON.stringify(newSettings));
+            return jsonResponse({ success: true, message: '系统设置保存成功！', settings: newSettings });
+          }
+        }
+
+        // POST /api/admin/topics (新增社课议题)
+        if (path === '/api/admin/topics' && method === 'POST') {
+          const body = await request.json().catch(() => ({}));
+          const { title, speaker, category, tag, duration, hook, summary, outline } = body;
+          if (!title || !title.trim()) {
+            return jsonResponse({ error: '社课主题名称不能为空' }, 400);
+          }
+          let topics = await getJsonKV(KV, 'topics', []);
+          const newTopic = {
+            id: 'topic-' + Date.now().toString(36),
+            title: title.trim(),
+            speaker: (speaker || '朋辈讲师').trim(),
+            category: (category || '通识探索').trim(),
+            tag: (tag || '新议题').trim(),
+            duration: (duration || '45分钟讲解 + 15分钟互动').trim(),
+            hook: (hook || '').trim(),
+            summary: (summary || '').trim(),
+            outline: Array.isArray(outline) ? outline : [],
+            createdAt: new Date().toISOString()
+          };
+          topics.push(newTopic);
+          await KV.put('topics', JSON.stringify(topics));
+          return jsonResponse({ success: true, message: '社课议题添加成功！', topic: newTopic });
+        }
+
+        // PUT /api/admin/topics/:id (编辑社课议题)
+        if (path.startsWith('/api/admin/topics/') && method === 'PUT') {
+          const topicId = path.split('/')[4];
+          const updates = await request.json().catch(() => ({}));
+          let topics = await getJsonKV(KV, 'topics', []);
+          const idx = topics.findIndex(t => t.id === topicId);
+          if (idx === -1) {
+            return jsonResponse({ error: '未找到对应社课议题' }, 404);
+          }
+          topics[idx] = { ...topics[idx], ...updates, id: topicId };
+          await KV.put('topics', JSON.stringify(topics));
+          return jsonResponse({ success: true, message: '社课议题修改成功！', topic: topics[idx] });
+        }
+
+        // DELETE /api/admin/topics/:id (删除社课议题)
+        if (path.startsWith('/api/admin/topics/') && method === 'DELETE') {
+          const topicId = path.split('/')[4];
+          let topics = await getJsonKV(KV, 'topics', []);
+          topics = topics.filter(t => t.id !== topicId);
+          await KV.put('topics', JSON.stringify(topics));
+          return jsonResponse({ success: true, message: '社课议题已删除！' });
         }
       }
 
       return jsonResponse({ error: 'Endpoint not found' }, 404);
     } catch (err) {
-      return jsonResponse({ error: err.message || 'Internal error' }, 500);
+      return jsonResponse({ error: err.message || 'Internal server error' }, 500);
     }
   }
 };

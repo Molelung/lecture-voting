@@ -93,10 +93,9 @@ createApp({
       }, 3000);
     };
 
-    // API 端点配置 (优先国内直连域名 vote.molan.cc.cd，并支持两级容灾回退)
+    // API 端点配置（优选国内极速直连域名，配置两组安全域名容灾）
     const PRIMARY_API = 'https://vote.molan.cc.cd';
     const FALLBACK_API = 'https://vote.listener.ccwu.cc';
-    const SECONDARY_FALLBACK = 'https://lecture-voting-api.mokelin-studio.workers.dev';
     const IS_LOCAL = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
     let activeApiBase = IS_LOCAL ? '' : PRIMARY_API;
@@ -113,9 +112,17 @@ createApp({
       const doFetch = async (baseUrl) => {
         const fullUrl = url.startsWith('/api') && baseUrl ? `${baseUrl}${url}` : url;
         const res = await fetch(fullUrl, { ...options, headers });
-        const data = await res.json();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (e) {
+          data = { error: '返回数据解析异常' };
+        }
         if (!res.ok) {
-          throw new Error(data.error || '请求服务失败');
+          const err = new Error(data.error || `请求服务异常 (${res.status})`);
+          err.status = res.status;
+          err.data = data;
+          throw err;
         }
         return data;
       };
@@ -123,21 +130,22 @@ createApp({
       try {
         return await doFetch(activeApiBase);
       } catch (err) {
+        // 如果是 HTTP 4xx 业务级错误（如参数不全、密码错误、达到最大投票数等），说明服务完全畅通，绝对不触发节点切换
+        if (err.status && err.status >= 400 && err.status < 500) {
+          showToast(err.message, 'warning');
+          throw err;
+        }
+
+        // 仅在主域名出现断网/DNS解析失败/502网关异常时，无感切换至备用直连域名
         if (!IS_LOCAL && activeApiBase === PRIMARY_API) {
           try {
-            console.warn('主域名网络波动，正在自动切换备用服务节点...', err);
+            console.warn('主接入点网络波动，正在无感切换至备用节点...', err.message);
             const data = await doFetch(FALLBACK_API);
             activeApiBase = FALLBACK_API;
             return data;
           } catch (fallbackErr) {
-            try {
-              const data2 = await doFetch(SECONDARY_FALLBACK);
-              activeApiBase = SECONDARY_FALLBACK;
-              return data2;
-            } catch (secErr) {
-              showToast(secErr.message || fallbackErr.message || err.message, 'error');
-              throw secErr;
-            }
+            showToast(fallbackErr.message || err.message, 'error');
+            throw fallbackErr;
           }
         }
         showToast(err.message, 'error');
@@ -192,9 +200,12 @@ createApp({
       } catch (e) {}
     };
 
-    // 榜单可见性计算
+    // 榜单可见性计算（严格遵循 settings.resultsVisibility 配置）
     const canSeeResults = computed(() => {
-      return hasVoted.value || isAdmin.value;
+      if (isAdmin.value) return true;
+      if (settings.value && settings.value.resultsVisibility === 'public') return true;
+      if (settings.value && settings.value.resultsVisibility === 'after_vote') return hasVoted.value;
+      return false;
     });
 
     // 切换卡片折叠展开
@@ -582,8 +593,30 @@ createApp({
       showToast('选票明细 CSV 导出成功！', 'success');
     };
 
+    // 静默无感实时同步（用户切回标签页或每 25 秒自动拉取最新投票数和公共讨论）
+    const refreshLiveState = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        await loadTopics();
+        await loadPublicComments();
+        if (canSeeResults.value) {
+          await loadResults();
+        }
+      } catch (e) {
+        // 静默同步失败不打扰正常浏览
+      }
+    };
+
     onMounted(() => {
       initData();
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            refreshLiveState();
+          }
+        });
+      }
+      setInterval(refreshLiveState, 25000);
     });
 
     return {
