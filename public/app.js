@@ -565,9 +565,30 @@ createApp({
       } catch (e) {}
     };
 
-    // 导出 CSV
+    // 导出 CSV (支持前端本地安全导出，支持 Excel UTF-8 BOM)
     const exportCsv = () => {
-      window.open('/api/admin/export-csv', '_blank');
+      if (!ballots.value || ballots.value.length === 0) {
+        showToast('暂无已提交的选票数据可供导出', 'warning');
+        return;
+      }
+      const headers = ['选票ID', '选民学号/用户名', '选民姓名', '投票主题', '投票时间'];
+      const rows = ballots.value.map(b => [
+        `"${b.id || ''}"`,
+        `"${b.voterUsername || ''}"`,
+        `"${b.voterDisplayName || ''}"`,
+        `"${(b.topicTitles || []).join('；')}"`,
+        `"${b.votedAt ? new Date(b.votedAt).toLocaleString() : ''}"`
+      ]);
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `朋辈社课投票明细_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('选票明细 CSV 已成功导出！', 'success');
     };
 
     onMounted(() => {
@@ -629,7 +650,9 @@ createApp({
       triggerHaptic,
       remainingVotes,
       clearSearch,
-      isRefreshingResults
+      isRefreshingResults,
+      loadResults,
+      loadTopics
     };
   }
 }).mount('#app');
