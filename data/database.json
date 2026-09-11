@@ -1,0 +1,205 @@
+{
+  "settings": {
+    "title": "【朋辈】社团学期公开社课投票",
+    "subtitle": "精选候选主题，由大家投票决定本期社课的开讲顺序与深度！每人可投 1~3 票。",
+    "maxVotesPerUser": 3,
+    "allowChangeVote": true,
+    "status": "open",
+    "resultsVisibility": "public",
+    "updatedAt": "2026-09-11T12:09:46.465Z"
+  },
+  "topics": [
+    {
+      "id": "topic-1",
+      "title": "认知偏差与日常决策：为什么聪明人也会犯傻？",
+      "speaker": "学术研讨组 · 心理方向",
+      "category": "认知决策",
+      "tag": "热门推荐",
+      "duration": "45分钟 + 15分钟互动讨论",
+      "summary": "从卡尼曼《思考，快与慢》出发，剖析锚定效应、可得性偏差与损失厌恶，掌握一套在选课、消费与生涯选择中避免被直觉误导的思维工具箱。",
+      "outline": [
+        "系统 1 与系统 2：直觉与理性的神经机制较量",
+        "经典盲区：锚定效应、确认偏误与幸存者偏差拆解",
+        "日常生活与人际决策中的“框架陷阱”与识破技巧",
+        "思维去偏差化（De-biasing）四步实操练习"
+      ],
+      "accentColor": "from-blue-500/20 to-cyan-500/20",
+      "createdAt": "2026-09-11T12:09:46.371Z"
+    },
+    {
+      "id": "topic-2",
+      "title": "战胜拖延与精神内耗：神经科学与行为设计实操",
+      "speaker": "朋辈研习社 · 发展部",
+      "category": "自我效能",
+      "tag": "高票心声",
+      "duration": "40分钟 + 20分钟行动工作坊",
+      "summary": "为什么懂得那么多道理依然拖延？揭秘前额叶皮层与杏仁核的生理博弈，打破内耗循环，带走立即可落地的“微步启动法”。",
+      "outline": [
+        "拖延不是态度问题，是情绪调节的生理防御机制",
+        "多巴胺与及时反馈：现代社交媒体如何重塑注意力",
+        "打破“全或无”完美主义内耗的认知重塑策略",
+        "现场搭建：2分钟启动法、环境摩擦力设计与习惯回路"
+      ],
+      "accentColor": "from-indigo-500/20 to-purple-500/20",
+      "createdAt": "2026-09-11T12:09:46.372Z"
+    },
+    {
+      "id": "topic-3",
+      "title": "博弈论与人际合作：囚徒困境与生活中的最优策略",
+      "speaker": "朋辈通识组 · 交叉学科",
+      "category": "社会博弈",
+      "tag": "硬核有趣",
+      "duration": "50分钟 + 10分钟问答",
+      "summary": "用数学与演化博弈的眼光审视人际关系与合作竞争。从囚徒困境到重复博弈，理解为什么“善良且有底线”是演化中最优的长期策略。",
+      "outline": [
+        "经典囚徒困境：个人理性为何容易导向集体悲剧？",
+        "阿克塞尔罗德的电脑锦标赛：一报还一报（Tit-for-Tat）为何横扫全场？",
+        "生活博弈：宿舍分工、团队合作与利益谈判中的策略制定",
+        "在不确定的环境中，如何建立高信誉度的人际合作网络"
+      ],
+      "accentColor": "from-emerald-500/20 to-teal-500/20",
+      "createdAt": "2026-09-11T12:09:46.372Z"
+    },
+    {
+      "id": "topic-4",
+      "title": "亲密依恋与人际沟通：读懂彼此的情感连接模式",
+      "speaker": "心理咨询与辅导助理组",
+      "category": "人际情感",
+      "tag": "温暖治愈",
+      "duration": "45分钟 + 15分钟心声交流",
+      "summary": "了解安全型、焦虑型与回避型依恋在亲情、友情与恋爱中的投射。学会识别情绪暗语，运用非暴力沟通化解冲突、建立深层信任。",
+      "outline": [
+        "依恋理论的前世今生：童年印记与成年后的人际投射",
+        "焦虑型 vs 回避型：亲密关系中“追逃游戏”的破解钥匙",
+        "非暴力沟通四要素：观察、感受、需要、请求的实操训练",
+        "建立心理安全岛：自我接纳与健康人际边界的确立"
+      ],
+      "accentColor": "from-rose-500/20 to-pink-500/20",
+      "createdAt": "2026-09-11T12:09:46.372Z"
+    },
+    {
+      "id": "topic-5",
+      "title": "深度工作与心流探索：注意力经济时代的高效专注法",
+      "speaker": "效率研习社 · 朋辈导师",
+      "category": "认知提升",
+      "tag": "硬核干货",
+      "duration": "40分钟 + 15分钟演示",
+      "summary": "在碎片化与信息轰炸的时代，如何重新夺回注意力的主导权？深入心流通道理论，构建无干扰的深度工作系统与知识整理心法。",
+      "outline": [
+        "心流通道条件：技能水平与挑战难度的精密匹配",
+        "信息茧房与多巴胺剥夺实验：降低认知过载的数字极简主义",
+        "构建个人深度工作仪式感与阻断干扰的物理屏障",
+        "从被动刷屏到主动输出的知识内化模型"
+      ],
+      "accentColor": "from-amber-500/20 to-orange-500/20",
+      "createdAt": "2026-09-11T12:09:46.372Z"
+    },
+    {
+      "id": "topic-6",
+      "title": "批判性思维与信息甄别：在这个时代如何独立思考",
+      "speaker": "社课通识部 · 科学素养组",
+      "category": "思维素养",
+      "tag": "思辨必修",
+      "duration": "45分钟 + 15分钟辩难",
+      "summary": "网络信息泥沙俱下，如何辨识偷换概念、诉诸情感与虚假因果？掌握科学哲学检验法，做一个清醒独立、不随波逐流的思考者。",
+      "outline": [
+        "常见逻辑谬误大赏：滑坡谬误、稻草人论证、虚假两难",
+        "相关不等于因果：科学研究与媒体标题党的话术拆解",
+        "信息源三级评级：从自媒体短视频到一手同行评审论文",
+        "心智防御工事：面对热点事件时的反向思考与事实核查路径"
+      ],
+      "accentColor": "from-violet-500/20 to-purple-500/20",
+      "createdAt": "2026-09-11T12:09:46.372Z"
+    }
+  ],
+  "users": [
+    {
+      "id": "admin-1",
+      "username": "admin",
+      "displayName": "社课总控管理员",
+      "passwordHash": "$2b$10$9dCFCSd/JPtpb8FpANCMbOWnGHBhtfB5EOaTPBWrJw1JxtpG4WG16",
+      "role": "admin",
+      "createdAt": "2026-09-11T12:09:46.465Z"
+    },
+    {
+      "id": "user-1789128586544-6wdc",
+      "username": "test_student_1789128586466",
+      "displayName": "测试同学A",
+      "passwordHash": "$2b$10$B/l.J1Ql8mGV2UnXrcaeiO7tnWdWPUNFpaIcJLGRYNEBuETr941PG",
+      "role": "user",
+      "createdAt": "2026-09-11T12:09:46.544Z"
+    },
+    {
+      "id": "user-1789128608147-pnj7",
+      "username": "student2026",
+      "displayName": "???",
+      "passwordHash": "$2b$10$.P0MV/Yw1DkC.KWQTCgr3uE3MQrqRbh.s7MSa2SYzSzNZPAhhtaDS",
+      "role": "user",
+      "createdAt": "2026-09-11T12:10:08.147Z"
+    },
+    {
+      "id": "user-1789129187164-fyl4",
+      "username": "test_student_1789129187063",
+      "displayName": "测试同学A",
+      "passwordHash": "$2b$10$Jsu/BwrepgkGvxzSES.ZjO0B71kVbNhMSqeKH8iQjvD8pgXSgvGvm",
+      "role": "user",
+      "createdAt": "2026-09-11T12:19:47.164Z"
+    },
+    {
+      "id": "user-1789131031907-fs3o",
+      "username": "test_student_1789131031812",
+      "displayName": "测试同学A",
+      "passwordHash": "$2b$10$qJquckMhEEjplxQPAOos6.J2CKU1x1GmAqPl8FAOa0PfkPW8JcPpG",
+      "role": "user",
+      "createdAt": "2026-09-11T12:50:31.907Z"
+    },
+    {
+      "id": "user-1789131348114-9ts2",
+      "username": "test_student_1789131348005",
+      "displayName": "测试同学A",
+      "passwordHash": "$2b$10$Orfe/osIiTMqYho./8AaUOUQZhEdR61s9ohsU3s29LZsOWl8mZlGi",
+      "role": "user",
+      "createdAt": "2026-09-11T12:55:48.114Z"
+    },
+    {
+      "id": "user-1789131606325-8xmo",
+      "username": "test_student_1789131606217",
+      "displayName": "测试同学A",
+      "passwordHash": "$2b$10$aMjGdt1xdm7H8P7lKZMiVOCt6CnYwRz3jAVsepkIar1Ey8Xqf5DrO",
+      "role": "user",
+      "createdAt": "2026-09-11T13:00:06.325Z"
+    },
+    {
+      "id": "user-1789131806705-dsk6",
+      "username": "test_student_1789131806612",
+      "displayName": "测试同学A",
+      "passwordHash": "$2b$10$22aX2XeASCqoeJwjmUHU6uyHBpgX3qk75FiYwqOBlL6CS6hnj4CH.",
+      "role": "user",
+      "createdAt": "2026-09-11T13:03:26.705Z"
+    }
+  ],
+  "votes": [
+    {
+      "id": "vote-1789131606510-zrp6",
+      "userId": "user-1789131606325-8xmo",
+      "topicIds": [
+        "topic-1",
+        "topic-3",
+        "topic-4"
+      ],
+      "votedAt": "2026-09-11T13:00:06.510Z",
+      "updatedAt": "2026-09-11T13:00:06.512Z"
+    },
+    {
+      "id": "vote-1789131806876-1wr5",
+      "userId": "user-1789131806705-dsk6",
+      "topicIds": [
+        "topic-1",
+        "topic-3",
+        "topic-4"
+      ],
+      "votedAt": "2026-09-11T13:03:26.876Z",
+      "updatedAt": "2026-09-11T13:03:26.878Z"
+    }
+  ]
+}

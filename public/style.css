@@ -1,0 +1,645 @@
+/* ==========================================================
+   Amie.so 灵动美学设计系统 (Amie Aesthetic System)
+   核心特点：纯净暖白画布、圆润超椭圆卡片（Squircle）、细腻发丝微边框、
+   极致触感弹性反馈、马卡龙精致微胶囊、悬浮毛玻璃 Dock
+   ========================================================== */
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --bg-page: #fafaf9;
+  --card-bg: #ffffff;
+  --card-border: rgba(0, 0, 0, 0.06);
+  --card-border-hover: rgba(0, 0, 0, 0.12);
+  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02), 0 6px 18px -3px rgba(0, 0, 0, 0.03);
+  --card-shadow-hover: 0 12px 32px -4px rgba(0, 0, 0, 0.06), 0 4px 12px -2px rgba(0, 0, 0, 0.02);
+  
+  --selected-bg: #f5f8ff;
+  --selected-border: #3b82f6;
+  --selected-shadow: 0 12px 30px -4px rgba(59, 130, 246, 0.16), 0 4px 12px -2px rgba(59, 130, 246, 0.08);
+
+  --dock-bg: rgba(255, 255, 255, 0.92);
+  --dock-border: rgba(0, 0, 0, 0.08);
+  --dock-shadow: 0 20px 48px -10px rgba(0, 0, 0, 0.12), 0 8px 20px -4px rgba(0, 0, 0, 0.04);
+
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-page);
+  color: #18181b;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Amie 纯净景深空间背景 (Spatial Depth Atmospheric Layer) */
+.amie-depth-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background-color: var(--bg-page);
+}
+
+.amie-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(75px);
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.amie-orb-1 {
+  width: 520px;
+  height: 520px;
+  top: -100px;
+  left: 15%;
+  background: radial-gradient(circle, rgba(219, 234, 254, 0.75) 0%, rgba(224, 231, 255, 0.35) 60%, transparent 80%);
+  animation: amieOrbFloat1 20s ease-in-out infinite alternate;
+}
+
+.amie-orb-2 {
+  width: 440px;
+  height: 440px;
+  bottom: 8%;
+  right: -60px;
+  background: radial-gradient(circle, rgba(254, 226, 226, 0.6) 0%, rgba(253, 242, 248, 0.25) 60%, transparent 80%);
+  animation: amieOrbFloat2 24s ease-in-out infinite alternate;
+}
+
+.amie-orb-3 {
+  width: 360px;
+  height: 360px;
+  top: 40%;
+  left: -80px;
+  background: radial-gradient(circle, rgba(243, 232, 255, 0.55) 0%, rgba(238, 242, 255, 0.2) 60%, transparent 80%);
+  animation: amieOrbFloat3 22s ease-in-out infinite alternate;
+}
+
+@keyframes amieOrbFloat1 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(50px, 35px) scale(1.06); }
+}
+
+@keyframes amieOrbFloat2 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-40px, -25px) scale(0.96); }
+}
+
+@keyframes amieOrbFloat3 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(35px, -35px) scale(1.05); }
+}
+
+/* 顶部与通用毛玻璃导航条 */
+.amie-nav-glass {
+  background: rgba(250, 250, 249, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Amie 标志性 Squircle 卡片（多层物理阴影 + 顶边透光高光） */
+.amie-card {
+  background: var(--card-bg);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 24px;
+  box-shadow: 
+    0 1px 2px rgba(0, 0, 0, 0.02),
+    0 6px 18px -3px rgba(0, 0, 0, 0.03),
+    0 16px 32px -8px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  transition: transform 0.28s var(--ease-spring), box-shadow 0.28s var(--ease-spring), border-color 0.28s var(--ease-spring), background-color 0.28s var(--ease-spring);
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  position: relative;
+  contain: layout style;
+  transform: translateZ(0);
+}
+
+@media (min-width: 640px) {
+  .amie-card {
+    border-radius: 28px;
+  }
+}
+
+.amie-card:hover {
+  transform: translateY(-4px) scale(1.006);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.02),
+    0 12px 28px -4px rgba(0, 0, 0, 0.06),
+    0 24px 48px -10px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 #ffffff;
+}
+
+.amie-card:active {
+  transform: scale(0.985);
+  transition: transform 0.08s var(--ease-spring);
+}
+
+/* 卡片交错入场动画 (Staggered Entrance Animation) */
+@keyframes amieCardEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  65% {
+    transform: translateY(-2px) scale(1.006);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.amie-card-enter {
+  animation: amieCardEnter 0.5s var(--ease-spring) both;
+}
+
+/* 卡片选中状态：温柔呼吸蓝底 + 优雅景深微边框 + 高亮晶透反光 */
+.amie-card-selected {
+  background: #f8faff !important;
+  border-color: #3b82f6 !important;
+  box-shadow: 
+    0 0 0 1.5px #3b82f6,
+    0 8px 24px -4px rgba(59, 130, 246, 0.2),
+    0 20px 42px -10px rgba(59, 130, 246, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+  animation: amieSelectedPulse 0.35s var(--ease-bounce);
+}
+
+@keyframes amieSelectedPulse {
+  0% { transform: scale(0.98); }
+  50% { transform: scale(1.015); }
+  100% { transform: scale(1); }
+}
+
+/* 选中勾选圈圈（Amie Signature Check-Circle） */
+.amie-check-circle {
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  border: 1.5px solid #d4d4d8;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s var(--ease-bounce);
+  color: transparent;
+}
+
+.amie-check-circle-checked {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  animation: amieCheckPop 0.35s var(--ease-bounce) both;
+}
+
+@keyframes amieCheckPop {
+  0% { transform: scale(0.5); }
+  50% { transform: scale(1.3); }
+  75% { transform: scale(0.95); }
+  100% { transform: scale(1.08); }
+}
+
+/* Amie 精致马卡龙微胶囊标签 (Pill Badges) */
+.amie-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.65rem;
+  font-size: 0.725rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  border-width: 1px;
+  border-style: solid;
+  line-height: 1.2;
+}
+
+.amie-pill-blue {
+  background-color: #eff6ff;
+  color: #2563eb;
+  border-color: #dbeafe;
+}
+
+.amie-pill-purple {
+  background-color: #f5f3ff;
+  color: #7c3aed;
+  border-color: #ede9fe;
+}
+
+.amie-pill-emerald {
+  background-color: #f0fdf4;
+  color: #059669;
+  border-color: #dcfce7;
+}
+
+.amie-pill-amber {
+  background-color: #fffbeb;
+  color: #d97706;
+  border-color: #fef3c7;
+}
+
+.amie-pill-rose {
+  background-color: #fff1f2;
+  color: #e11d48;
+  border-color: #ffe4e6;
+}
+
+.amie-pill-neutral {
+  background-color: #f4f4f5;
+  color: #52525b;
+  border-color: #e4e4e7;
+}
+
+/* 灵动分段物理滑块 (The Spring Glider) */
+.amie-segmented-container {
+  position: relative;
+  overflow: hidden;
+  background: rgba(228, 228, 231, 0.7);
+}
+
+.amie-segmented-glider {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  background: #ffffff;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 0 #ffffff;
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 分类胶囊按钮 */
+.amie-filter-pill {
+  padding: 0.45rem 0.95rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border-radius: 9999px;
+  transition: all 0.2s var(--ease-spring);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.amie-filter-pill-active {
+  background: #18181b;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.amie-filter-pill-inactive {
+  background: #ffffff;
+  color: #52525b;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.amie-filter-pill-inactive:hover {
+  background: #f4f4f5;
+  color: #18181b;
+  transform: translateY(-1px);
+}
+
+.amie-filter-pill:active {
+  transform: scale(0.95);
+}
+
+/* 旋转刷新动效 */
+.amie-spin {
+  animation: amieSpin 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes amieSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 分类滑动遮罩提示 (Mobile Category Fade Mask) */
+.amie-filter-scroll-wrapper {
+  position: relative;
+  -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  mask-image: linear-gradient(to right, black 88%, transparent 100%);
+}
+
+@media (min-width: 640px) {
+  .amie-filter-scroll-wrapper {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
+/* 课程大纲行内展开动效 */
+.amie-accordion-content {
+  animation: amieAccordionDown 0.24s var(--ease-spring);
+}
+
+@keyframes amieAccordionDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 按钮通用触控设计（弹簧回弹与微抬升） */
+.amie-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  padding: 0.55rem 1.15rem;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease, background-color 0.15s ease;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  touch-action: manipulation;
+  position: relative;
+}
+
+.amie-btn:hover {
+  transform: translateY(-1px);
+}
+
+.amie-btn:active {
+  transform: scale(0.93) !important;
+}
+
+.amie-btn-primary {
+  background: #18181b;
+  color: #ffffff;
+  border: 1px solid transparent;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+}
+
+.amie-btn-primary:hover {
+  background: #27272a;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.amie-btn-secondary {
+  background: #ffffff;
+  color: #27272a;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.amie-btn-secondary:hover {
+  background: #f4f4f5;
+  color: #09090b;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
+
+.amie-btn-accent {
+  background: #2563eb;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 20px -4px rgba(37, 99, 235, 0.35);
+}
+
+.amie-btn-accent:hover {
+  background: #1d4ed8;
+  box-shadow: 0 10px 24px -4px rgba(37, 99, 235, 0.45);
+}
+
+/* Amie 标志性底部悬浮 Dock（强化浮空景深与高透反射） */
+.amie-dock {
+  position: fixed;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  width: calc(100% - 24px);
+  max-width: 520px;
+  background: var(--dock-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 9999px;
+  padding: 0.55rem 0.85rem;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.04),
+    0 16px 36px -6px rgba(0, 0, 0, 0.12),
+    0 30px 60px -12px rgba(0, 0, 0, 0.08),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
+  animation: slideUpDock 0.4s var(--ease-spring);
+  touch-action: manipulation;
+  will-change: transform;
+}
+
+@media (min-width: 640px) {
+  .amie-dock {
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    padding: 0.65rem 0.95rem;
+    width: calc(100% - 32px);
+  }
+}
+
+/* 选票计数跳动动效 */
+.amie-badge-bounce {
+  animation: amieBadgePop 0.4s var(--ease-bounce) both;
+}
+
+@keyframes amieBadgePop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35) rotate(-6deg); }
+  75% { transform: scale(0.92) rotate(3deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+/* 按钮微光流转动效 (Shimmer Wave Effect) */
+.amie-shimmer-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.amie-shimmer-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent);
+  animation: amieShimmerSweep 3.6s infinite ease-in-out;
+  pointer-events: none;
+}
+
+@keyframes amieShimmerSweep {
+  0% { transform: translateX(-150%) skewX(-20deg); }
+  35% { transform: translateX(250%) skewX(-20deg); }
+  100% { transform: translateX(250%) skewX(-20deg); }
+}
+
+/* 动态折叠箭头 */
+.amie-chevron {
+  transition: transform 0.25s var(--ease-spring);
+}
+.amie-chevron-open {
+  transform: rotate(180deg);
+}
+
+/* Toast 弹性入场 */
+.amie-toast {
+  animation: amieToastIn 0.35s var(--ease-bounce) both;
+}
+
+@keyframes amieToastIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -24px) scale(0.9);
+  }
+  70% {
+    transform: translate(-50%, 4px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes slideUpDock {
+  from {
+    transform: translate(-50%, 80px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+/* 弹窗与移动端抽屉 (Bottom Sheet) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(9, 9, 11, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  animation: fadeIn 0.2s ease-out;
+  touch-action: manipulation;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 28px;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.18);
+  animation: scaleUp 0.25s var(--ease-spring);
+}
+
+@keyframes scaleUp {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 移动端专享优化 (Mobile Optimization) */
+@media (max-width: 640px) {
+  /* 输入框防 iOS Safari 强制缩放 (必须 >= 16px) */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  .modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 32px 32px 0 0 !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    max-height: 88vh !important;
+    padding: 1.25rem 1.25rem calc(1.75rem + env(safe-area-inset-bottom, 0px)) !important;
+    animation: slideUpSheet 0.32s var(--ease-spring) !important;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.14) !important;
+  }
+
+  @keyframes slideUpSheet {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .modal-sheet-handle {
+    display: block !important;
+  }
+}
+
+.modal-sheet-handle {
+  display: none;
+  width: 42px;
+  height: 4.5px;
+  border-radius: 9999px;
+  background-color: #e4e4e7;
+  margin: 0 auto 14px auto;
+}
+
+/* 进度条设计 */
+.amie-progress-track {
+  background: #f4f4f5;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.amie-progress-bar {
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #3b82f6 0%, #6366f1 100%);
+  transition: width 0.7s var(--ease-spring);
+}
+
+/* 水平平滑滑动无滚动条 */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

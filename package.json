@@ -1,0 +1,17 @@
+{
+  "name": "lecture-voting",
+  "version": "1.0.0",
+  "description": "A clean, modern liquid-glass society lecture voting web application",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

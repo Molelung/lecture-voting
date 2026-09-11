@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#fafaf9">
+  <title>朋辈社课主题投票 · 选出你心仪的社课</title>
+
+  <!-- 本地静态库（秒开无等待） -->
+  <script src="/vendor/tailwindcss.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="/vendor/vue.global.prod.js"></script>
+  <script src="/vendor/qrcode.min.js"></script>
+  <script src="/vendor/confetti.js"></script>
+  <!-- Amie.so 灵动极简美学样式 -->
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="antialiased selection:bg-zinc-900 selection:text-white">
+  <!-- Amie 景深空间动态多层环境光 (Spatial Atmospheric Depth) -->
+  <div class="amie-depth-canvas">
+    <div class="amie-orb amie-orb-1"></div>
+    <div class="amie-orb amie-orb-2"></div>
+    <div class="amie-orb amie-orb-3"></div>
+  </div>
+
+  <div id="app" v-cloak class="min-h-screen flex flex-col">
+    <!-- 顶部极简导航栏 -->
+    <header class="sticky top-0 z-40 amie-nav-glass px-3.5 sm:px-8 py-2.5 sm:py-3.5 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+        <!-- Amie 风格圆角 App 图标 -->
+        <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-zinc-900 text-white flex items-center justify-center font-semibold text-xs sm:text-sm shadow-xs shrink-0">
+          课
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 sm:gap-2">
+            <span class="font-bold text-zinc-900 text-sm sm:text-base tracking-tight leading-tight truncate max-w-[110px] xs:max-w-[150px] sm:max-w-none">{{ settings.title }}</span>
+            <span v-if="settings.status === 'open'" class="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span class="hidden xs:inline">进行中</span>
+            </span>
+            <span v-else-if="settings.status === 'paused'" class="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">
+              暂缓
+            </span>
+            <span v-else class="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-zinc-600 bg-zinc-100 border border-zinc-200 px-1.5 sm:px-2 py-0.5 rounded-full shrink-0">
+              截止
+            </span>
+          </div>
+          <p class="text-[10px] sm:text-[11px] text-zinc-400 hidden sm:block">每人至多投 {{ settings.maxVotesPerUser }} 票 · 实时计票</p>
+        </div>
+      </div>
+
+      <!-- 右侧操作区 -->
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <!-- 分享 / 手机扫码直达 -->
+        <button 
+          @click="handleSmartShare" 
+          class="w-8 h-8 sm:w-auto sm:h-auto amie-btn amie-btn-secondary text-xs sm:py-1.5 sm:px-3 rounded-full shrink-0 p-0 sm:p-auto flex items-center justify-center"
+          title="分享 / 手机扫码">
+          <svg class="w-3.5 h-3.5 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+          <span class="hidden sm:inline">分享</span>
+        </button>
+
+        <!-- 管理后台 -->
+        <button 
+          @click="openAdminModal" 
+          class="w-8 h-8 sm:w-auto sm:h-auto amie-btn amie-btn-secondary text-xs sm:py-1.5 sm:px-3 rounded-full shrink-0 p-0 sm:p-auto flex items-center justify-center"
+          title="管理后台">
+          <svg class="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          <span class="hidden sm:inline">管理</span>
+        </button>
+
+        <!-- 用户信息 / 登录 -->
+        <div v-if="user" class="flex items-center gap-1 bg-white border border-zinc-200/80 py-0.5 sm:py-1 pl-2 sm:pl-2.5 pr-0.5 sm:pr-1 rounded-full shadow-xs shrink-0">
+          <div class="flex flex-col text-right">
+            <span class="text-[11px] sm:text-xs font-semibold text-zinc-900 leading-none truncate max-w-[64px] sm:max-w-none">{{ user.displayName }}</span>
+            <span class="text-[9px] sm:text-[10px] text-zinc-400 leading-tight hidden xs:inline">{{ user.role === 'admin' ? '管理员' : '已登记' }}</span>
+          </div>
+          <button 
+            @click="handleLogout" 
+            class="w-5 h-5 sm:w-6 sm:h-6 rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 flex items-center justify-center transition"
+            title="退出登录">
+            <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+          </button>
+        </div>
+
+        <button 
+          v-else 
+          @click="showAuthModal = true; authMode = 'login'" 
+          class="amie-btn amie-btn-primary text-[11px] sm:text-xs py-1.5 px-2.5 sm:px-3.5 rounded-full font-medium shrink-0">
+          登录 / 登记
+        </button>
+      </div>
+    </header>
+
+    <!-- 主体容器 -->
+    <main class="max-w-5xl w-full mx-auto px-4 sm:px-6 pt-4 sm:pt-10 flex-1">
+      <!-- Amie 极简自信 Hero 标题区 -->
+      <section class="mb-5 sm:mb-8 text-center max-w-2xl mx-auto">
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-white/90 border border-zinc-200/80 text-zinc-700 text-[11px] sm:text-xs font-medium mb-2.5 sm:mb-3 shadow-xs backdrop-blur-sm">
+          <span>✨</span>
+          <span>2026 朋辈研学 · 社课心愿直通车</span>
+        </div>
+        <h2 class="text-xl sm:text-4xl font-extrabold text-zinc-900 tracking-tight leading-tight mb-2 sm:mb-3">
+          {{ settings.subtitle || '选出你想听的社课主题' }}
+        </h2>
+        <p class="text-xs sm:text-sm text-zinc-500 leading-relaxed max-w-lg mx-auto">
+          精选候选主题，你的选票将决定社课开讲顺序。每人至多投 <strong class="text-zinc-900 font-semibold">{{ settings.maxVotesPerUser }}</strong> 票。
+        </p>
+
+        <!-- 3 个极简指标药丸卡片 -->
+        <div class="inline-flex items-center gap-2 sm:gap-6 mt-3 sm:mt-5 p-1.5 sm:p-2 bg-white/90 rounded-2xl border border-zinc-200/80 shadow-xs backdrop-blur-sm">
+          <div class="px-2.5 sm:px-4 py-0.5 sm:py-1 text-center">
+            <span class="text-[10px] sm:text-[11px] text-zinc-400 font-medium block">候选社课</span>
+            <span class="text-sm sm:text-lg font-bold text-zinc-900">{{ topics.length }} <span class="text-[10px] sm:text-xs font-normal text-zinc-400">门</span></span>
+          </div>
+          <div class="w-px h-5 sm:h-7 bg-zinc-100"></div>
+          <div class="px-2.5 sm:px-4 py-0.5 sm:py-1 text-center">
+            <span class="text-[10px] sm:text-[11px] text-zinc-400 font-medium block">参与人数</span>
+            <span class="text-sm sm:text-lg font-bold text-blue-600">{{ stats.totalVoters }} <span class="text-[10px] sm:text-xs font-normal text-zinc-400">人</span></span>
+          </div>
+          <div class="w-px h-5 sm:h-7 bg-zinc-100"></div>
+          <div class="px-2.5 sm:px-4 py-0.5 sm:py-1 text-center">
+            <span class="text-[10px] sm:text-[11px] text-zinc-400 font-medium block">已投选票</span>
+            <span class="text-sm sm:text-lg font-bold text-zinc-900">{{ stats.totalVotesCast }} <span class="text-[10px] sm:text-xs font-normal text-zinc-400">票</span></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 醒目的投票指引与选票槽格 (Interactive Voting Progress & Tip Banner) -->
+      <div class="mb-5 p-3.5 sm:p-4 rounded-2xl bg-white/85 border border-zinc-200/80 shadow-xs backdrop-blur-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div 
+            :class="selectedTopicIds.length === settings.maxVotesPerUser ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-blue-50 text-blue-600 border-blue-200'"
+            class="w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0 font-bold text-sm shadow-2xs">
+            <span v-if="userVote && !hasSelectionChanged">✓</span>
+            <span v-else-if="selectedTopicIds.length === settings.maxVotesPerUser">🎉</span>
+            <span v-else>💡</span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs sm:text-sm font-bold text-zinc-900">
+                <span v-if="userVote && !hasSelectionChanged">您已完成投票（截止前随时可调换并重新提交）</span>
+                <span v-else-if="userVote && hasSelectionChanged">选票已修改！点击底部【更新选票】即可生效</span>
+                <span v-else-if="selectedTopicIds.length === settings.maxVotesPerUser">选票已选满！可点击底部【确认提交】投出</span>
+                <span v-else-if="selectedTopicIds.length > 0">已选 {{ selectedTopicIds.length }} 门，还可以再选 {{ remainingVotes }} 门</span>
+                <span v-else>请挑选心仪的社课（每人限投 {{ settings.maxVotesPerUser }} 票）</span>
+              </span>
+              <span class="text-[10px] sm:text-[11px] font-semibold text-blue-600 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-full">
+                {{ userVote ? '随时可调换' : '支持多选' }}
+              </span>
+            </div>
+            <p class="text-[11px] text-zinc-500 mt-0.5">
+              点击卡片任意区域或底部按钮即可选择；最终得票前列的社课将在下月优先排期开讲。
+            </p>
+          </div>
+        </div>
+
+        <!-- 3 格微型选票指示格 (Interactive Vote Slots) -->
+        <div class="flex items-center gap-1.5 self-end sm:self-center shrink-0 bg-zinc-100/90 p-1.5 rounded-xl border border-zinc-200/60">
+          <span class="text-[10px] text-zinc-400 font-medium px-1">选票槽:</span>
+          <div 
+            v-for="slotIdx in settings.maxVotesPerUser" 
+            :key="slotIdx"
+            :class="slotIdx <= selectedTopicIds.length ? 'bg-blue-600 text-white shadow-xs scale-105' : 'bg-white text-zinc-300 border border-zinc-200'"
+            class="w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all duration-300">
+            <span v-if="slotIdx <= selectedTopicIds.length">✓</span>
+            <span v-else>{{ slotIdx }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 视图分段控制与分类过滤器 -->
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 mb-4 sm:mb-6">
+        <!-- Amie 标志性灵动滑块分段切换器 (Animated Sliding Segmented Control) -->
+        <div class="amie-segmented-container relative p-1 rounded-full border border-zinc-200/60 w-full sm:w-72 flex items-center select-none shadow-xs">
+          <!-- 弹性物理滑动滑块 (The Spring Glider) -->
+          <div 
+            class="amie-segmented-glider"
+            :style="{ transform: activeTab === 'vote' ? 'translateX(0%)' : 'translateX(100%)' }">
+          </div>
+          
+          <button 
+            @click="activeTab = 'vote'; triggerHaptic('light')"
+            :class="activeTab === 'vote' ? 'text-zinc-900 font-bold' : 'text-zinc-500 hover:text-zinc-700'"
+            class="relative z-10 w-1/2 py-1.5 rounded-full text-xs font-medium transition-colors duration-200 flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="activeTab === 'vote' ? 'scale-110 text-blue-600' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+            候选社课 ({{ topics.length }})
+          </button>
+          <button 
+            @click="activeTab = 'results'; loadResults(); triggerHaptic('light')"
+            :class="activeTab === 'results' ? 'text-zinc-900 font-bold' : 'text-zinc-500 hover:text-zinc-700'"
+            class="relative z-10 w-1/2 py-1.5 rounded-full text-xs font-medium transition-colors duration-200 flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="activeTab === 'results' ? 'scale-110 text-amber-500' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+            实时热度榜
+          </button>
+        </div>
+
+        <!-- 搜索框 -->
+        <div class="relative sm:w-60">
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            placeholder="搜索社课名称 / 讲师..." 
+            class="w-full bg-white border border-zinc-200/90 rounded-full pl-8 pr-7 py-1.5 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400 shadow-xs transition">
+          <svg class="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+          <button 
+            v-if="searchQuery" 
+            @click="searchQuery = ''" 
+            class="w-4 h-4 rounded-full bg-zinc-200 text-zinc-600 hover:bg-zinc-300 absolute right-2 top-2 flex items-center justify-center text-[10px] transition"
+            title="清空搜索">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- 分类标签过滤器（仅投票Tab显示，支持触控横滑并带有渐变遮罩提示） -->
+      <div v-if="activeTab === 'vote'" class="amie-filter-scroll-wrapper mb-4 sm:mb-6">
+        <div class="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar px-0.5">
+          <button 
+            v-for="cat in categories" 
+            :key="cat"
+            @click="activeCategory = cat; triggerHaptic('light')"
+            :class="activeCategory === cat ? 'amie-filter-pill-active' : 'amie-filter-pill-inactive'"
+            class="amie-filter-pill">
+            {{ cat }}
+          </button>
+        </div>
+      </div>
+
+      <!-- ================= 视图 1：社课候选网格 (Amie 灵动 Squircle 卡片) ================= -->
+      <div v-if="activeTab === 'vote'">
+        <!-- 搜索无结果友好提示卡片 -->
+        <div v-if="filteredTopics.length === 0" class="bg-white/90 rounded-3xl p-10 sm:p-12 text-center text-zinc-400 border border-zinc-200/80 shadow-xs backdrop-blur-sm">
+          <div class="w-12 h-12 rounded-2xl bg-zinc-100 text-zinc-500 flex items-center justify-center mx-auto mb-3 text-xl">🔍</div>
+          <p class="text-sm font-semibold text-zinc-700">没有找到符合条件的社课主题</p>
+          <p class="text-xs text-zinc-400 mt-1">您可以尝试更换分类标签或清除搜索关键词</p>
+          <button @click="clearSearch" class="mt-4 amie-btn amie-btn-secondary text-xs py-1.5 px-4 rounded-full">
+            清空搜索与分类筛选
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+          <div 
+            v-for="(topic, index) in filteredTopics" 
+            :key="topic.id"
+            @click="toggleTopic(topic.id)"
+            :style="{ animationDelay: (index * 0.05) + 's' }"
+            :class="[
+              'amie-card p-4 sm:p-6 flex flex-col justify-between amie-card-enter',
+              selectedTopicIds.includes(topic.id) ? 'amie-card-selected' : ''
+            ]">
+            
+            <div>
+              <!-- 顶部标签与 Amie 打勾圈圈 -->
+              <div class="flex items-center justify-between gap-2 mb-2.5">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span :class="getCategoryClass(topic.category)" class="amie-pill">
+                    {{ topic.category }}
+                  </span>
+                  <span v-if="topic.tag" class="amie-pill amie-pill-neutral">
+                    {{ topic.tag }}
+                  </span>
+                </div>
+
+                <!-- Amie 标志性勾选圈圈 -->
+                <div 
+                  :class="selectedTopicIds.includes(topic.id) ? 'amie-check-circle-checked' : ''"
+                  class="amie-check-circle shrink-0">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+              </div>
+
+              <!-- 主题名称 -->
+              <h3 class="text-[15px] sm:text-lg font-bold text-zinc-900 tracking-tight leading-snug mb-1.5 group-hover:text-blue-600 transition">
+                {{ topic.title }}
+              </h3>
+
+              <!-- 主讲人与时长 -->
+              <div class="flex items-center gap-2 text-xs text-zinc-400 font-medium mb-2.5">
+                <span class="text-zinc-600 truncate">{{ topic.speaker }}</span>
+                <span>·</span>
+                <span>{{ topic.duration || '45分钟' }}</span>
+              </div>
+
+              <!-- 简介摘要 -->
+              <p class="text-xs sm:text-[13px] text-zinc-500 leading-relaxed line-clamp-3 mb-3">
+                {{ topic.summary }}
+              </p>
+
+              <!-- 行内可折叠大纲抽屉 (Inline Expandable Accordion with Animation) -->
+              <div v-show="expandedTopicIds.includes(topic.id)" class="amie-accordion-content mt-2.5 pt-2.5 border-t border-zinc-100/90 text-xs text-zinc-600 space-y-1.5">
+                <div v-for="(point, idx) in topic.outline" :key="idx" class="flex items-start gap-2">
+                  <span class="w-4 h-4 rounded-full bg-zinc-100 text-zinc-700 flex items-center justify-center font-bold text-[9px] shrink-0 mt-0.5">{{ idx + 1 }}</span>
+                  <span class="leading-relaxed text-[12px] text-zinc-700">{{ point }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <!-- 选票状态即时提示语 -->
+              <div class="mb-2 text-[11px] font-medium flex items-center justify-between">
+                <span v-if="selectedTopicIds.includes(topic.id)" class="text-blue-600 font-bold flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+                  已加入您的选票单
+                </span>
+                <span v-else-if="selectedTopicIds.length >= settings.maxVotesPerUser" class="text-zinc-400">
+                  已选满 {{ settings.maxVotesPerUser }} 票 (可调换)
+                </span>
+                <span v-else class="text-zinc-400">
+                  还可投 {{ remainingVotes }} 票
+                </span>
+              </div>
+
+              <!-- 查看大纲交互 -->
+              <div class="pt-2.5 border-t border-zinc-100 flex items-center justify-between mb-2.5">
+                <button 
+                  @click.stop="toggleExpand(topic.id)" 
+                  class="text-xs text-zinc-500 hover:text-zinc-900 font-medium flex items-center gap-1 py-1 px-1 -ml-1 rounded-lg transition">
+                  <span>{{ expandedTopicIds.includes(topic.id) ? '收起大纲' : '查看大纲要点' }}</span>
+                  <svg :class="expandedTopicIds.includes(topic.id) ? 'amie-chevron-open' : ''" class="w-3 h-3 text-zinc-400 amie-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+
+                <!-- 当前得票展示（若公开） -->
+                <span v-if="topic.stats" class="text-xs text-zinc-400 font-medium">
+                  <strong class="text-zinc-700">{{ topic.stats.count }}</strong> 票 ({{ topic.stats.percentage }}%)
+                </span>
+              </div>
+
+              <!-- 底部选票触发按钮 -->
+              <button 
+                @click.stop="toggleTopic(topic.id)"
+                :class="selectedTopicIds.includes(topic.id) ? 'amie-btn-accent' : 'amie-btn-secondary'"
+                class="amie-btn w-full py-2.5 rounded-2xl text-xs sm:text-sm font-semibold transition">
+                <template v-if="selectedTopicIds.includes(topic.id)">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                  <span>已选择支持</span>
+                </template>
+                <template v-else-if="selectedTopicIds.length >= settings.maxVotesPerUser">
+                  <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                  <span>调换为支持此课</span>
+                </template>
+                <template v-else>
+                  <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                  <span>投票支持</span>
+                </template>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 视图 2：实时热度榜单 ================= -->
+      <div v-else-if="activeTab === 'results'">
+        <div class="bg-white/95 rounded-3xl p-6 sm:p-8 border border-zinc-200/80 shadow-xs mb-6 backdrop-blur-md">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-lg font-bold text-zinc-900 tracking-tight">社课心愿热度排行</h3>
+              <p class="text-xs text-zinc-400 mt-0.5">每张选票都在实时计算中，透明公开</p>
+            </div>
+            <button 
+              @click="loadResults" 
+              class="amie-btn amie-btn-secondary text-xs py-1.5 px-3 rounded-full text-zinc-600">
+              <svg :class="isRefreshingResults ? 'amie-spin' : ''" class="w-3.5 h-3.5 text-zinc-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+              刷新数据
+            </button>
+          </div>
+
+          <!-- 醒目的排期规则提示条 (Clear Ranking Rules Notice) -->
+          <div class="mb-5 p-3 rounded-2xl bg-blue-50/70 border border-blue-100 flex items-center gap-2.5 text-xs text-blue-900">
+            <span class="text-base">🏆</span>
+            <div>
+              <strong class="font-bold">排期规则说明：</strong> 最终得票数排名前 3 的社课主题将直接进入下月公开课优先筹备名单，并获得朋辈研学专属场地与宣传支持。
+            </div>
+          </div>
+
+          <!-- 排行榜列表 -->
+          <div class="space-y-3.5">
+            <div 
+              v-for="(item, index) in stats.topicStats" 
+              :key="item.id"
+              class="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-100 transition hover:bg-zinc-50">
+              <div class="flex items-center justify-between gap-3 mb-2">
+                <div class="flex items-center gap-3">
+                  <!-- 排名专属徽章 -->
+                  <div 
+                    :class="[
+                      'w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shadow-xs',
+                      index === 0 ? 'bg-amber-100 text-amber-900' :
+                      index === 1 ? 'bg-zinc-200 text-zinc-800' :
+                      index === 2 ? 'bg-orange-100 text-orange-900' :
+                      'bg-white text-zinc-400 border border-zinc-200'
+                    ]">
+                    {{ index + 1 }}
+                  </div>
+                  <div>
+                    <h4 class="font-bold text-zinc-900 text-sm sm:text-base">{{ item.title }}</h4>
+                    <span class="text-xs text-zinc-400">{{ item.speaker }} · {{ item.category }}</span>
+                  </div>
+                </div>
+
+                <div class="text-right shrink-0">
+                  <div class="text-base sm:text-lg font-extrabold text-zinc-900 leading-none">
+                    {{ item.count }} <span class="text-xs font-normal text-zinc-400">票</span>
+                  </div>
+                  <div class="text-[11px] text-zinc-400 mt-0.5">{{ item.percentage }}%</div>
+                </div>
+              </div>
+
+              <!-- 优雅进度条 -->
+              <div class="amie-progress-track h-2 w-full mt-2">
+                <div 
+                  class="amie-progress-bar h-full" 
+                  :style="{ width: item.percentage + '%' }">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ================= Amie 标志性底部悬浮 Dock (The Floating Dock) ================= -->
+    <div 
+      v-if="selectedTopicIds.length > 0 || userVote" 
+      class="amie-dock flex items-center justify-between gap-2 sm:gap-3">
+      <div class="flex items-center gap-2 sm:gap-2.5 overflow-hidden pl-1 min-w-0">
+        <div 
+          :class="badgeBouncing ? 'amie-badge-bounce' : ''"
+          class="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-[11px] sm:text-xs shrink-0 transition-transform">
+          {{ selectedTopicIds.length }}
+        </div>
+        <div class="min-w-0 truncate">
+          <div class="text-[11px] sm:text-xs font-bold text-zinc-900 leading-tight">
+            已选社课：{{ selectedTopicIds.length }} / {{ settings.maxVotesPerUser }}
+          </div>
+          <div class="text-[10px] sm:text-[11px] text-zinc-500 truncate max-w-[110px] xs:max-w-[170px] sm:max-w-xs">
+            <span v-if="userVote && !hasSelectionChanged" class="text-emerald-600 font-medium">✓ 已完成投票</span>
+            <span v-else-if="userVote && hasSelectionChanged" class="text-amber-600 font-medium">选票已修改</span>
+            <span v-else>{{ selectedTopics.map(t => t.title).join('、') }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <button 
+          v-if="userVote && !hasSelectionChanged" 
+          @click="activeTab = 'results'; loadResults();" 
+          class="amie-btn amie-btn-secondary text-[11px] sm:text-xs py-1.5 sm:py-2 px-3 sm:px-3.5 rounded-full">
+          查看榜单
+        </button>
+
+        <button 
+          v-else 
+          @click="handlePreSubmit" 
+          class="amie-btn amie-btn-primary amie-shimmer-btn text-xs sm:text-sm py-1.5 sm:py-2 px-3.5 sm:px-5 rounded-full font-bold">
+          {{ userVote ? '更新选票' : '确认提交' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= 弹窗：课程大纲与要点 ================= -->
+    <div v-if="showDetailModal" class="modal-overlay" @click.self="showDetailModal = null">
+      <div class="modal-content max-w-lg w-full p-6 sm:p-8">
+        <div class="modal-sheet-handle"></div>
+        <div class="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div class="flex items-center gap-1.5 mb-2">
+              <span :class="getCategoryClass(showDetailModal.category)" class="amie-pill">{{ showDetailModal.category }}</span>
+              <span v-if="showDetailModal.tag" class="amie-pill amie-pill-neutral">{{ showDetailModal.tag }}</span>
+            </div>
+            <h3 class="text-xl font-bold text-zinc-900 tracking-tight leading-snug">{{ showDetailModal.title }}</h3>
+            <p class="text-xs text-zinc-400 mt-1">主讲：{{ showDetailModal.speaker }} · 预估时长：{{ showDetailModal.duration }}</p>
+          </div>
+          <button @click="showDetailModal = null" class="w-8 h-8 rounded-full hover:bg-zinc-100 flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+
+        <div class="space-y-4 text-sm text-zinc-600">
+          <div>
+            <h4 class="font-bold text-zinc-900 text-xs uppercase tracking-wider mb-1.5">主题亮点简介</h4>
+            <p class="text-xs leading-relaxed bg-zinc-50 p-3.5 rounded-2xl border border-zinc-100 text-zinc-600">{{ showDetailModal.summary }}</p>
+          </div>
+
+          <div>
+            <h4 class="font-bold text-zinc-900 text-xs uppercase tracking-wider mb-2">社课大纲与要点</h4>
+            <ul class="space-y-2">
+              <li v-for="(point, idx) in showDetailModal.outline" :key="idx" class="text-xs flex items-start gap-2.5">
+                <span class="w-4 h-4 rounded-full bg-zinc-100 text-zinc-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">{{ idx + 1 }}</span>
+                <span class="leading-relaxed text-zinc-700">{{ point }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-end gap-2">
+          <button @click="showDetailModal = null" class="amie-btn amie-btn-secondary text-xs py-2 px-4 rounded-full">
+            关闭
+          </button>
+          <button 
+            @click="toggleTopic(showDetailModal.id); showDetailModal = null;" 
+            :class="selectedTopicIds.includes(showDetailModal.id) ? 'bg-rose-500 text-white' : 'amie-btn-accent'"
+            class="amie-btn text-xs py-2 px-5 rounded-full font-semibold">
+            {{ selectedTopicIds.includes(showDetailModal.id) ? '取消勾选此课' : '选择这门社课' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 弹窗：登录 / 注册 / 快捷登记 ================= -->
+    <div v-if="showAuthModal" class="modal-overlay" @click.self="showAuthModal = false">
+      <div class="modal-content max-w-sm w-full p-6 sm:p-8">
+        <div class="modal-sheet-handle"></div>
+        <div class="text-center mb-6">
+          <div class="w-11 h-11 rounded-2xl bg-zinc-900 text-white flex items-center justify-center mx-auto mb-3 shadow-sm">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+          </div>
+          <h3 class="text-lg font-bold text-zinc-900">{{ authMode === 'login' ? '账号登录' : '快速登记注册' }}</h3>
+          <p class="text-xs text-zinc-400 mt-1">输入学号或用户名，一人一票确保公正有效</p>
+        </div>
+
+        <form @submit.prevent="handleAuthSubmit" class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-zinc-700 mb-1">学号 / 用户名</label>
+            <input 
+              v-model="authForm.username" 
+              type="text" 
+              required
+              placeholder="例如：20240101 或 Nickname" 
+              class="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400">
+          </div>
+
+          <div v-if="authMode === 'register'">
+            <label class="block text-xs font-semibold text-zinc-700 mb-1">您的姓名 / 昵称</label>
+            <input 
+              v-model="authForm.displayName" 
+              type="text" 
+              placeholder="例如：小明同学" 
+              class="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400">
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-zinc-700 mb-1">密码</label>
+            <input 
+              v-model="authForm.password" 
+              type="password" 
+              required
+              placeholder="至少 4 位" 
+              class="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400">
+          </div>
+
+          <div v-if="authError" class="p-2.5 rounded-xl bg-rose-50 text-rose-600 text-xs border border-rose-200">
+            {{ authError }}
+          </div>
+
+          <button 
+            type="submit" 
+            class="w-full amie-btn amie-btn-primary py-2.5 rounded-xl text-xs font-bold mt-2">
+            {{ authMode === 'login' ? '立即登录' : '登记并开启投票' }}
+          </button>
+        </form>
+
+        <div class="mt-4 pt-3 border-t border-zinc-100 text-center">
+          <button 
+            @click="authMode = authMode === 'login' ? 'register' : 'login'; authError = '';" 
+            class="text-xs text-blue-600 hover:underline">
+            {{ authMode === 'login' ? '没有账号？点击登记新账号' : '已有账号？点击直接登录' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 弹窗：提交前二次确认 ================= -->
+    <div v-if="showConfirmModal" class="modal-overlay" @click.self="showConfirmModal = false">
+      <div class="modal-content max-w-sm w-full p-6 text-center">
+        <div class="modal-sheet-handle"></div>
+        <div class="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <h3 class="text-base font-bold text-zinc-900 mb-1">确认提交社课选票？</h3>
+        <p class="text-xs text-zinc-500 mb-4">您本次共选择了 <strong class="text-blue-600">{{ selectedTopicIds.length }}</strong> 门社课：</p>
+
+        <div class="bg-zinc-50 rounded-2xl p-3.5 text-left space-y-2 mb-5 max-h-48 overflow-y-auto border border-zinc-100">
+          <div v-for="(t, i) in selectedTopics" :key="t.id" class="text-xs text-zinc-700 flex items-center gap-2">
+            <span class="w-4 h-4 rounded-full bg-zinc-200 text-zinc-700 flex items-center justify-center font-bold text-[10px]">{{ i + 1 }}</span>
+            <span class="truncate font-medium">{{ t.title }}</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button @click="showConfirmModal = false" class="flex-1 amie-btn amie-btn-secondary text-xs py-2 rounded-xl">
+            再想想
+          </button>
+          <button 
+            @click="confirmSubmitVote" 
+            :disabled="submittingVote" 
+            class="flex-1 amie-btn amie-btn-primary text-xs py-2 rounded-xl font-bold">
+            {{ submittingVote ? '提交中...' : '确认投出' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 弹窗：管理员控制后台 ================= -->
+    <div v-if="showAdminModal" class="modal-overlay" @click.self="showAdminModal = false">
+      <div class="modal-content max-w-2xl w-full p-6 sm:p-8 max-h-[90vh] flex flex-col">
+        <div class="modal-sheet-handle"></div>
+        <div class="flex items-center justify-between pb-4 border-b border-zinc-100 shrink-0">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-zinc-900 text-white flex items-center justify-center text-xs font-bold">
+              管
+            </div>
+            <div>
+              <h3 class="font-bold text-zinc-900 text-base">社课投票总控后台</h3>
+              <p class="text-xs text-zinc-400">调整投票规则、增删社课、查验投票记录</p>
+            </div>
+          </div>
+          <button @click="showAdminModal = false" class="w-8 h-8 rounded-full hover:bg-zinc-100 flex items-center justify-center text-zinc-400">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+
+        <!-- 选项卡 -->
+        <div class="flex items-center gap-1.5 my-3 shrink-0 p-1 bg-zinc-100 rounded-2xl overflow-x-auto no-scrollbar">
+          <button 
+            @click="adminActiveTab = 'topics'" 
+            :class="adminActiveTab === 'topics' ? 'bg-white shadow-xs font-bold text-zinc-900' : 'text-zinc-500 hover:text-zinc-800'"
+            class="py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 shrink-0 whitespace-nowrap">
+            社课主题管理 ({{ topics.length }})
+          </button>
+          <button 
+            @click="adminActiveTab = 'settings'" 
+            :class="adminActiveTab === 'settings' ? 'bg-white shadow-xs font-bold text-zinc-900' : 'text-zinc-500 hover:text-zinc-800'"
+            class="py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 shrink-0 whitespace-nowrap">
+            系统规则配置
+          </button>
+          <button 
+            @click="adminActiveTab = 'ballots'; loadBallots();" 
+            :class="adminActiveTab === 'ballots' ? 'bg-white shadow-xs font-bold text-zinc-900' : 'text-zinc-500 hover:text-zinc-800'"
+            class="py-1.5 px-3 rounded-xl text-xs font-medium transition-all duration-200 shrink-0 whitespace-nowrap">
+            选票审计明细
+          </button>
+        </div>
+
+        <!-- 选项卡 1：社课主题管理 -->
+        <div v-if="adminActiveTab === 'topics'" class="overflow-y-auto flex-1 pr-1 space-y-3">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs text-zinc-400">可实时修改课程名称、讲师或新增主题</span>
+            <button @click="openAddTopicModal" class="amie-btn amie-btn-primary text-xs py-1 px-3 rounded-full">
+              + 添加新社课
+            </button>
+          </div>
+
+          <div v-for="t in topics" :key="t.id" class="p-3.5 bg-zinc-50 rounded-2xl border border-zinc-100 flex items-center justify-between gap-3">
+            <div class="overflow-hidden">
+              <div class="flex items-center gap-1.5 mb-1">
+                <span class="text-[10px] bg-white px-2 py-0.5 rounded-full border border-zinc-200 text-zinc-600 font-medium">{{ t.category }}</span>
+                <span class="text-[10px] text-zinc-400">主讲：{{ t.speaker }}</span>
+              </div>
+              <h4 class="font-bold text-zinc-900 text-xs sm:text-sm truncate">{{ t.title }}</h4>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button @click="openEditTopicModal(t)" class="text-xs text-blue-600 hover:underline px-2 py-1">编辑</button>
+              <button @click="deleteTopic(t.id)" class="text-xs text-rose-500 hover:underline px-2 py-1">删除</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 选项卡 2：系统规则配置 -->
+        <div v-else-if="adminActiveTab === 'settings'" class="overflow-y-auto flex-1 pr-1 space-y-4 text-xs">
+          <div>
+            <label class="block font-medium text-zinc-700 mb-1">网站大标题</label>
+            <input v-model="adminSettingsForm.title" type="text" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+          </div>
+          <div>
+            <label class="block font-medium text-zinc-700 mb-1">副标题说明</label>
+            <input v-model="adminSettingsForm.subtitle" type="text" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-medium text-zinc-700 mb-1">每人最多可投几票</label>
+              <input v-model.number="adminSettingsForm.maxVotesPerUser" type="number" min="1" max="10" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+            </div>
+            <div>
+              <label class="block font-medium text-zinc-700 mb-1">投票状态</label>
+              <select v-model="adminSettingsForm.status" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+                <option value="open">正常开放中</option>
+                <option value="paused">暂停投票</option>
+                <option value="closed">截止并锁定</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block font-medium text-zinc-700 mb-1">榜单公开权限</label>
+            <select v-model="adminSettingsForm.resultsVisibility" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+              <option value="public">所有人实时公开可见</option>
+              <option value="after_vote">用户完成投票后才可见</option>
+              <option value="admin_only">仅管理员可见</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2 pt-2">
+            <input type="checkbox" id="allowChange" v-model="adminSettingsForm.allowChangeVote" class="rounded text-zinc-900">
+            <label for="allowChange" class="text-zinc-700">允许用户在截止前修改已提交的选票</label>
+          </div>
+
+          <div class="pt-4 border-t border-zinc-100 flex justify-between items-center">
+            <button @click="clearVotes" class="text-rose-500 hover:text-rose-700 text-xs">清空所有选票数据</button>
+            <button @click="saveAdminSettings" class="amie-btn amie-btn-primary py-2 px-6 rounded-xl font-bold">保存配置</button>
+          </div>
+        </div>
+
+        <!-- 选项卡 3：选票明细与导出 -->
+        <div v-else-if="adminActiveTab === 'ballots'" class="overflow-y-auto flex-1 pr-1 space-y-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-zinc-400">收到 {{ ballots.length }} 份选票</span>
+            <button @click="exportCsv" class="amie-btn amie-btn-primary text-xs py-1.5 px-3 rounded-full flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              导出表格
+            </button>
+          </div>
+
+          <div v-for="b in ballots" :key="b.id" class="p-3 bg-zinc-50 rounded-2xl border border-zinc-100 text-xs space-y-1">
+            <div class="flex justify-between font-bold text-zinc-800">
+              <span>{{ b.voterName }} ({{ b.voterUsername }})</span>
+              <span class="text-zinc-400 font-normal text-[10px]">{{ new Date(b.votedAt).toLocaleString('zh-CN') }}</span>
+            </div>
+            <div class="text-zinc-600">
+              所投社课：{{ b.topicTitles.join('；') }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 弹窗：添加 / 编辑主题 ================= -->
+    <div v-if="showTopicFormModal" class="modal-overlay" @click.self="showTopicFormModal = false">
+      <div class="modal-content max-w-md w-full p-6">
+        <div class="modal-sheet-handle"></div>
+        <h3 class="text-base font-bold text-zinc-900 mb-4">{{ topicForm.id ? '编辑社课主题' : '发布新社课主题' }}</h3>
+        <form @submit.prevent="saveTopic" class="space-y-3 text-xs">
+          <div>
+            <label class="block font-medium text-zinc-700 mb-1">主题名称 *</label>
+            <input v-model="topicForm.title" required type="text" placeholder="例如：《拖延症背后的神经机制》" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-medium text-zinc-700 mb-1">主讲人 / 发起人</label>
+              <input v-model="topicForm.speaker" type="text" placeholder="例如：朋辈学术组" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+            </div>
+            <div>
+              <label class="block font-medium text-zinc-700 mb-1">分类标签</label>
+              <input v-model="topicForm.category" type="text" placeholder="认知心理 / 社会博弈等" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-medium text-zinc-700 mb-1">特色角标</label>
+              <input v-model="topicForm.tag" type="text" placeholder="热门 / 干货等" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+            </div>
+            <div>
+              <label class="block font-medium text-zinc-700 mb-1">预估时长</label>
+              <input v-model="topicForm.duration" type="text" placeholder="45分钟 + 15分钟研讨" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+            </div>
+          </div>
+          <div>
+            <label class="block font-medium text-zinc-700 mb-1">主题核心亮点简介</label>
+            <textarea v-model="topicForm.summary" rows="2" placeholder="简要说明本课能给听众带来什么..." class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50"></textarea>
+          </div>
+          <div>
+            <label class="block font-medium text-zinc-700 mb-1">课程大纲要点 (每行一条)</label>
+            <textarea v-model="topicForm.outlineText" rows="3" placeholder="要点1&#10;要点2&#10;要点3" class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50"></textarea>
+          </div>
+
+          <div class="pt-3 flex justify-end gap-2">
+            <button type="button" @click="showTopicFormModal = false" class="amie-btn amie-btn-secondary py-1.5 px-4 rounded-xl">取消</button>
+            <button type="submit" class="amie-btn amie-btn-primary py-1.5 px-5 rounded-xl font-bold">保存并发布</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ================= 弹窗：手机扫码直接投票 ================= -->
+    <div v-if="showQrModal" class="modal-overlay" @click.self="showQrModal = false">
+      <div class="modal-content max-w-sm w-full p-6 text-center">
+        <div class="modal-sheet-handle"></div>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-base font-bold text-zinc-900 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-zinc-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+            手机扫码直接投票
+          </h3>
+          <button @click="showQrModal = false" class="w-7 h-7 rounded-full hover:bg-zinc-100 flex items-center justify-center text-zinc-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+        <p class="text-xs text-zinc-400 mb-4">同一 Wi-Fi 或热点下手机扫码即可直接访问</p>
+
+        <!-- 二维码画布 -->
+        <div class="p-4 bg-white rounded-2xl border border-zinc-200/80 shadow-xs inline-block mx-auto mb-4">
+          <div id="qrcode" class="flex items-center justify-center"></div>
+        </div>
+
+        <!-- 手机投票链接与一键复制 -->
+        <div class="bg-zinc-50 rounded-2xl p-2.5 flex items-center justify-between gap-2 border border-zinc-100 text-xs mb-4">
+          <span class="font-mono text-zinc-600 truncate text-[11px] select-all">{{ mobileUrl || 'http://localhost:3000' }}</span>
+          <button @click="copyMobileUrl" class="amie-btn amie-btn-primary py-1 px-3 text-[11px] rounded-xl shrink-0 font-medium">
+            复制链接
+          </button>
+        </div>
+
+        <button @click="showQrModal = false" class="w-full amie-btn amie-btn-secondary text-xs py-2 rounded-xl">
+          完成
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= 浮动 Toast 消息提醒 ================= -->
+    <div 
+      v-if="toast.show" 
+      class="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-lg text-xs font-semibold flex items-center gap-2 border amie-toast"
+      :class="[
+        toast.type === 'success' ? 'bg-zinc-900 text-white border-zinc-800' :
+        toast.type === 'warning' ? 'bg-amber-500 text-white border-amber-400' :
+        toast.type === 'error' ? 'bg-rose-500 text-white border-rose-400' :
+        'bg-zinc-800 text-white border-zinc-700'
+      ]">
+      <span>{{ toast.message }}</span>
+    </div>
+  </div>
+
+  <!-- 业务逻辑装载 -->
+  <script src="/app.js"></script>
+</body>
+</html>
