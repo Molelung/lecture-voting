@@ -140,9 +140,10 @@ createApp({
       }, 3000);
     };
 
-    // API 端点配置 (支持国内优化直连域名与 Cloudflare Worker 容灾自动切换)
-    const PRIMARY_API = 'https://vote.listener.ccwu.cc';
-    const FALLBACK_API = 'https://lecture-voting-api.mokelin-studio.workers.dev';
+    // API 端点配置 (优先使用已配置解析的国内直连域名 vote.molan.cc.cd，并支持自动容灾)
+    const PRIMARY_API = 'https://vote.molan.cc.cd';
+    const FALLBACK_API = 'https://vote.listener.ccwu.cc';
+    const SECONDARY_FALLBACK = 'https://lecture-voting-api.mokelin-studio.workers.dev';
     const IS_LOCAL = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
     let activeApiBase = IS_LOCAL ? '' : PRIMARY_API;
@@ -168,16 +169,22 @@ createApp({
       try {
         return await doFetch(activeApiBase);
       } catch (err) {
-        // 如果主域名在某些网络遇到波动，自动降级切换至备用 Worker 节点
+        // 如果主域名遇到网络波动，自动降级切换至备用节点
         if (!IS_LOCAL && activeApiBase === PRIMARY_API) {
           try {
-            console.warn('主域名连接重试中，正在自动切换备用 Worker 服务节点...', err);
+            console.warn('主域名连接重试中，正在自动切换备用服务节点...', err);
             const data = await doFetch(FALLBACK_API);
             activeApiBase = FALLBACK_API;
             return data;
           } catch (fallbackErr) {
-            showToast(fallbackErr.message || err.message, 'error');
-            throw fallbackErr;
+            try {
+              const data2 = await doFetch(SECONDARY_FALLBACK);
+              activeApiBase = SECONDARY_FALLBACK;
+              return data2;
+            } catch (secErr) {
+              showToast(secErr.message || fallbackErr.message || err.message, 'error');
+              throw secErr;
+            }
           }
         }
         showToast(err.message, 'error');
