@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="theme-color" content="#fafaf9">
-  <title>朋辈社课主题投票 · 选出你心仪的社课</title>
+  <meta name="theme-color" content="#fbfbfa">
+  <title>朋辈社课 · 议题征集与票选</title>
 
   <!-- 本地静态资源（秒开零延迟） -->
   <script src="./vendor/tailwindcss.js"></script>
@@ -14,13 +14,19 @@
     tailwind.config = {
       theme: {
         extend: {
+          fontFamily: {
+            serif: ['"Songti SC"', '"Source Han Serif SC"', '"Noto Serif SC"', 'STSong', '"Times New Roman"', 'Georgia', 'serif'],
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"Inter"', '"PingFang SC"', '"Hiragino Sans GB"', '"Segoe UI"', 'sans-serif']
+          },
           colors: {
-            brand: {
-              50: '#eff6ff',
-              100: '#dbeafe',
-              500: '#3b82f6',
-              600: '#2563eb',
-              700: '#1d4ed8',
+            notion: {
+              bg: '#fbfbfa',
+              card: '#ffffff',
+              border: '#e9e9e7',
+              callout: '#f7f6f3',
+              dark: '#2f3437',
+              gray: '#787774',
+              light: '#9b9a97'
             }
           }
         }
@@ -32,31 +38,24 @@
   <script src="./vendor/confetti.js"></script>
   <link rel="stylesheet" href="./style.css">
 </head>
-<body class="antialiased selection:bg-zinc-900 selection:text-white pb-24 sm:pb-28">
-  <!-- Amie 景深空间环境微光 -->
-  <div class="amie-depth-canvas">
-    <div class="amie-orb amie-orb-1"></div>
-    <div class="amie-orb amie-orb-2"></div>
-    <div class="amie-orb amie-orb-3"></div>
-  </div>
-
+<body class="antialiased selection:bg-zinc-800 selection:text-white pb-24 sm:pb-28 bg-[#fbfbfa] text-[#2f3437]">
   <div id="app" v-cloak class="min-h-screen flex flex-col">
-    <!-- 顶部极简导航栏 -->
-    <header class="sticky top-0 z-40 amie-nav-glass px-4 sm:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-3">
+    <!-- 顶部极简学术导航条 (Notion Header) -->
+    <header class="sticky top-0 z-40 bg-[#fbfbfa]/90 backdrop-blur-md px-4 sm:px-8 py-3 flex items-center justify-between gap-3 border-b border-[#e9e9e7]">
       <div class="flex items-center gap-2.5 min-w-0">
-        <div class="w-8 h-8 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-          课
+        <div class="w-7 h-7 rounded-md bg-[#2f3437] text-white flex items-center justify-center font-serif font-bold text-xs shrink-0">
+          P
         </div>
         <div class="flex items-center gap-2 min-w-0">
-          <span class="font-bold text-zinc-900 text-sm sm:text-base tracking-tight truncate">朋辈社课投票</span>
-          <span v-if="settings.status === 'open'" class="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>开放中</span>
+          <span class="font-serif font-semibold text-[#2f3437] text-sm sm:text-base tracking-tight truncate">朋辈研学 · 社课票选</span>
+          <span v-if="settings.status === 'open'" class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded shrink-0">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+            <span>征集中</span>
           </span>
-          <span v-else-if="settings.status === 'paused'" class="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full shrink-0">
-            暂缓中
+          <span v-else-if="settings.status === 'paused'" class="text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded shrink-0">
+            暂缓
           </span>
-          <span v-else class="text-[10px] font-semibold text-zinc-500 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-full shrink-0">
+          <span v-else class="text-[11px] font-medium text-[#787774] bg-[#f0efe9] px-2 py-0.5 rounded shrink-0">
             已截止
           </span>
         </div>
@@ -66,78 +65,76 @@
       <div class="flex items-center gap-2 shrink-0">
         <button 
           @click="handleSmartShare" 
-          class="amie-btn amie-btn-secondary text-xs py-1 px-3 rounded-full flex items-center gap-1.5"
+          class="notion-action-btn text-xs py-1 px-2.5 rounded flex items-center gap-1.5 text-[#787774] hover:text-[#2f3437]"
           title="分享二维码或链接">
-          <svg class="w-3.5 h-3.5 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
           <span class="hidden xs:inline">分享</span>
         </button>
 
         <button 
           @click="openAdminModal" 
-          class="amie-btn amie-btn-secondary text-xs py-1 px-2.5 rounded-full flex items-center gap-1"
-          :class="isAdmin ? 'border-blue-300 text-blue-600 font-semibold' : 'text-zinc-500'"
+          class="notion-action-btn text-xs py-1 px-2 rounded flex items-center gap-1"
+          :class="isAdmin ? 'text-blue-700 font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
           title="管理员后台">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
           <span class="hidden xs:inline">{{ isAdmin ? '管理中' : '管理' }}</span>
         </button>
       </div>
     </header>
 
     <!-- 主体内容 -->
-    <main class="max-w-4xl w-full mx-auto px-4 sm:px-6 pt-3 sm:pt-6 flex-1">
-      <!-- 极简灵动 Hero 区域（彻底砍掉冗余大说明） -->
-      <section class="mb-4 sm:mb-6 text-center max-w-xl mx-auto">
-        <div class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/90 border border-zinc-200/80 text-zinc-800 text-xs font-medium mb-1.5 shadow-xs backdrop-blur-sm">
-          <span>✨</span>
-          <span>朋辈研学 · 社课心愿直通车</span>
+    <main class="max-w-4xl w-full mx-auto px-4 sm:px-6 pt-4 sm:pt-8 flex-1">
+      <!-- 智性人文刊物风 Hero (Editorial Title Block) -->
+      <section class="mb-5 sm:mb-8 text-center max-w-xl mx-auto">
+        <div class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#f0efe9] text-[#5a5853] text-xs font-medium mb-2.5">
+          <span class="text-[9px] text-[#787774]">●</span>
+          <span>朋辈研学 · 2026 春季研讨议题征集</span>
         </div>
-        <h2 class="text-lg sm:text-2xl font-extrabold text-zinc-900 tracking-tight leading-tight">
+        <h2 class="font-serif text-xl sm:text-2xl md:text-3xl font-bold text-[#2f3437] tracking-tight leading-tight mb-2">
           {{ settings.title || '朋辈社课 · 选出你最想听的一课' }}
         </h2>
+        <p class="text-xs sm:text-sm text-[#787774] leading-relaxed max-w-md mx-auto mb-3">
+          {{ settings.subtitle || '由全校学友共同票选决定开讲顺序与研讨方向。投票完成后揭晓全站热度排行。' }}
+        </p>
 
-        <!-- 3 格微型选票槽指示器与参与统计 -->
-        <div class="flex items-center justify-center gap-2.5 mt-2.5 flex-wrap">
-          <div class="flex items-center gap-1.5 bg-white/90 px-3 py-1 rounded-full border border-zinc-200/80 shadow-xs backdrop-blur-sm">
-            <span class="text-[11px] text-zinc-400 font-medium">选票槽:</span>
-            <div 
-              v-for="slotIdx in (settings.maxVotesPerUser || 3)" 
-              :key="slotIdx"
-              :class="slotIdx <= selectedTopicIds.length ? 'bg-blue-600 border-blue-600 scale-105' : 'bg-zinc-100 border-zinc-300'"
-              class="w-3.5 h-3.5 rounded-full border transition-all duration-200 flex items-center justify-center">
-              <span v-if="slotIdx <= selectedTopicIds.length" class="text-[9px] text-white font-bold leading-none">✓</span>
+        <!-- 极简选票指示槽与参与统计 -->
+        <div class="flex items-center justify-center gap-2.5 flex-wrap">
+          <div class="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-[#e9e9e7] shadow-2xs">
+            <span class="text-[11px] text-[#787774]">选票槽:</span>
+            <div class="flex items-center gap-1">
+              <div 
+                v-for="slotIdx in (settings.maxVotesPerUser || 3)" 
+                :key="slotIdx"
+                :class="slotIdx <= selectedTopicIds.length ? 'bg-[#2f3437] border-[#2f3437]' : 'bg-[#f0efe9] border-[#d3d1cb]'"
+                class="w-2.5 h-2.5 rounded-full border transition-all duration-200">
+              </div>
             </div>
-            <span class="text-[11px] font-semibold text-zinc-700 ml-1">
-              {{ selectedTopicIds.length }}/{{ settings.maxVotesPerUser || 3 }} 票
+            <span class="text-[11px] font-semibold text-[#2f3437]">
+              {{ selectedTopicIds.length }} / {{ settings.maxVotesPerUser || 3 }} 票
             </span>
           </div>
 
-          <div class="text-[11px] text-zinc-500 bg-white/80 px-3 py-1 rounded-full border border-zinc-200/60 flex items-center gap-1 shadow-xs">
-            <span>🔥</span>
-            <span>{{ stats.totalVoters || statsSummary.totalVoters || 0 }} 人参与 · {{ stats.totalVotesCast || statsSummary.totalVotesCast || 0 }} 票</span>
+          <div class="text-[11px] text-[#787774] bg-white px-3 py-1 rounded-full border border-[#e9e9e7] shadow-2xs">
+            <span>{{ stats.totalVoters || statsSummary.totalVoters || 0 }} 位学友参与 · {{ stats.totalVotesCast || statsSummary.totalVotesCast || 0 }} 票已投递</span>
           </div>
         </div>
       </section>
 
-      <!-- 视图分段控制器 (候选社课 / 实时热度榜) -->
-      <div class="flex items-center justify-between gap-3 mb-3 sm:mb-4">
-        <div class="amie-segmented-container relative p-1 rounded-full border border-zinc-200/80 w-64 flex items-center select-none shadow-xs mx-auto sm:mx-0">
-          <div 
-            class="amie-segmented-glider"
-            :style="{ transform: activeTab === 'vote' ? 'translateX(0%)' : 'translateX(100%)' }">
-          </div>
-          
+      <!-- 视图分段控制器 (候选议题 / 实时热度榜) -->
+      <div class="flex items-center justify-between gap-3 mb-4 sm:mb-5">
+        <div class="notion-segmented relative p-0.5 rounded-lg border border-[#e9e9e7] bg-[#f0efe9] w-60 flex items-center select-none mx-auto sm:mx-0">
           <button 
             @click="activeTab = 'vote'; triggerHaptic('light')"
-            :class="activeTab === 'vote' ? 'text-zinc-900 font-bold' : 'text-zinc-500 hover:text-zinc-700'"
-            class="relative z-10 w-1/2 py-1 rounded-full text-xs font-medium transition-colors duration-200 flex items-center justify-center gap-1">
-            <span>候选社课 ({{ topics.length }})</span>
+            :class="activeTab === 'vote' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
+            class="w-1/2 py-1 rounded-md text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1">
+            <span>候选议题 ({{ topics.length }})</span>
           </button>
           <button 
             @click="activeTab = 'results'; loadResults(); triggerHaptic('light')"
-            :class="activeTab === 'results' ? 'text-zinc-900 font-bold' : 'text-zinc-500 hover:text-zinc-700'"
-            class="relative z-10 w-1/2 py-1 rounded-full text-xs font-medium transition-colors duration-200 flex items-center justify-center gap-1">
+            :class="activeTab === 'results' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
+            class="w-1/2 py-1 rounded-md text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1">
             <span>实时热度榜</span>
-            <span v-if="!canSeeResults" class="text-[10px]">🔒</span>
+            <svg v-if="!canSeeResults" class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
           </button>
         </div>
 
@@ -146,20 +143,20 @@
           <button 
             v-if="!showSearchInput"
             @click="showSearchInput = true" 
-            class="w-8 h-8 rounded-full bg-white border border-zinc-200/80 hover:bg-zinc-50 text-zinc-500 flex items-center justify-center shadow-xs transition"
+            class="w-7 h-7 rounded-md bg-white border border-[#e9e9e7] hover:bg-[#f7f6f3] text-[#787774] flex items-center justify-center transition"
             title="搜索社课">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
           </button>
           <div v-else class="relative flex items-center">
             <input 
               v-model="searchQuery" 
               type="text" 
-              placeholder="搜索社课 / 讲师..." 
-              class="w-48 bg-white border border-zinc-300 rounded-full pl-7 pr-6 py-1 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-blue-500 shadow-xs transition">
-            <svg class="w-3.5 h-3.5 text-zinc-400 absolute left-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              placeholder="搜索议题 / 讲师..." 
+              class="w-48 bg-white border border-[#d3d1cb] rounded-md pl-7 pr-6 py-1 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] transition">
+            <svg class="w-3.5 h-3.5 text-[#787774] absolute left-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
             <button 
               @click="searchQuery = ''; showSearchInput = false" 
-              class="w-4 h-4 rounded-full bg-zinc-200 text-zinc-500 hover:bg-zinc-300 absolute right-1.5 flex items-center justify-center text-[10px]">
+              class="w-4 h-4 rounded-full bg-[#e9e9e7] text-[#787774] hover:bg-[#d3d1cb] absolute right-1.5 flex items-center justify-center text-[10px]">
               ✕
             </button>
           </div>
@@ -167,95 +164,97 @@
       </div>
 
       <!-- 单行呼吸感横滑分类胶囊 -->
-      <div v-if="activeTab === 'vote'" class="amie-filter-scroll-wrapper mb-3 sm:mb-5">
+      <div v-if="activeTab === 'vote'" class="mb-3 sm:mb-4">
         <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar px-0.5">
           <button 
             v-for="cat in categories" 
             :key="cat"
             @click="activeCategory = cat; triggerHaptic('light')"
-            :class="activeCategory === cat ? 'amie-filter-pill-active' : 'amie-filter-pill-inactive'"
-            class="amie-filter-pill text-xs py-1 px-3">
+            :class="activeCategory === cat ? 'bg-[#2f3437] text-white font-medium' : 'bg-white text-[#787774] hover:text-[#2f3437] border border-[#e9e9e7]'"
+            class="text-xs py-1 px-3 rounded-md transition whitespace-nowrap">
             {{ cat }}
           </button>
         </div>
       </div>
 
-      <!-- ================= 视图 1：紧凑折叠式社课卡片列表 ================= -->
+      <!-- ================= 视图 1：紧凑折叠式社课卡片列表（方案 B: 极致骨架收拢） ================= -->
       <div v-if="activeTab === 'vote'">
         <!-- 搜索无结果 -->
-        <div v-if="filteredTopics.length === 0" class="bg-white/80 rounded-2xl p-8 text-center text-zinc-400 border border-zinc-200/80 shadow-xs">
-          <p class="text-sm font-semibold text-zinc-600">未找到符合条件的社课主题</p>
-          <button @click="clearSearch" class="mt-3 amie-btn amie-btn-secondary text-xs py-1 px-3 rounded-full">
+        <div v-if="filteredTopics.length === 0" class="bg-white rounded-xl p-8 text-center text-[#787774] border border-[#e9e9e7]">
+          <p class="text-sm font-semibold text-[#2f3437]">未找到符合条件的社课议题</p>
+          <button @click="clearSearch" class="mt-3 text-xs py-1 px-3 rounded border border-[#e9e9e7] hover:bg-[#f7f6f3]">
             重置分类与搜索
           </button>
         </div>
 
-        <!-- 极简紧凑卡片网格 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+        <!-- 极简紧凑卡片网格 (Notion Card Grid) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
           <div 
             v-for="topic in filteredTopics" 
             :key="topic.id"
             :class="[
-              'amie-compact-card',
+              'notion-card',
               selectedTopicIds.includes(topic.id) ? 'is-selected' : ''
             ]">
             
-            <!-- 卡片核心行（点击即可快捷勾选投票） -->
+            <!-- 卡片收起态核心骨架（方案 B：仅保留标题、元数据、状态与勾选） -->
             <div 
               @click="toggleTopic(topic.id)"
-              class="p-3.5 sm:p-4 cursor-pointer select-none">
+              class="p-4 cursor-pointer select-none">
               
-              <!-- 顶部标签与勾选圆圈 -->
-              <div class="flex items-center justify-between gap-2 mb-1.5">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span :class="getCategoryClass(topic.category)" class="amie-pill text-[11px] py-0.5 px-2">
+              <!-- 顶部行：分类微标 + 主讲信息 + 极简复选圈 -->
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-[11px] font-medium text-[#5a5853] bg-[#f0efe9] px-2 py-0.5 rounded shrink-0">
                     {{ topic.category }}
                   </span>
-                  <span v-if="topic.tag" class="amie-pill amie-pill-neutral text-[10px] py-0.5 px-2 text-zinc-500">
+                  <span v-if="topic.tag" class="text-[11px] text-[#787774] font-normal truncate">
                     {{ topic.tag }}
                   </span>
+                  <span class="text-[#d3d1cb] text-[10px]">·</span>
+                  <span class="text-[11px] text-[#787774] truncate">{{ topic.speaker }}</span>
                 </div>
 
-                <!-- 灵动勾选圈圈 -->
+                <!-- 极简复选勾选圈 -->
                 <div 
-                  :class="selectedTopicIds.includes(topic.id) ? 'amie-check-circle-checked' : ''"
-                  class="amie-check-circle shrink-0">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                  :class="selectedTopicIds.includes(topic.id) ? 'bg-[#2f3437] border-[#2f3437]' : 'bg-white border-[#d3d1cb]'"
+                  class="w-4 h-4 rounded-full border transition-colors flex items-center justify-center shrink-0">
+                  <svg v-if="selectedTopicIds.includes(topic.id)" class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                  </svg>
                 </div>
               </div>
 
-              <!-- 社课主标题 -->
-              <h3 class="text-sm sm:text-base font-bold text-zinc-900 tracking-tight leading-snug mb-1">
+              <!-- 社课主标题 (优雅衬线字体) -->
+              <h3 class="font-serif text-base sm:text-[17px] font-semibold text-[#2f3437] tracking-tight leading-snug mb-2.5 hover:text-blue-700 transition-colors">
                 {{ topic.title }}
               </h3>
 
-              <!-- 主讲人与预估时长 -->
-              <div class="text-xs text-zinc-400 font-medium mb-2.5 flex items-center gap-1.5">
-                <span class="text-zinc-600 truncate">{{ topic.speaker }}</span>
-                <span>·</span>
-                <span>{{ topic.duration || '45分钟' }}</span>
-              </div>
-
-              <!-- 卡片底部状态行与展开触发器 -->
-              <div class="flex items-center justify-between pt-2 border-t border-zinc-100 text-xs">
-                <!-- 票数状态（投前保密，投后揭晓） -->
-                <div>
-                  <span v-if="topic.stats.locked" class="amie-locked-pill">
-                    <span>🔒</span>
-                    <span>投后揭晓得票</span>
+              <!-- 底栏状态行：票数状态（投前保密） + 手风琴展开按钮 -->
+              <div class="flex items-center justify-between pt-2 border-t border-[#f0efe9] text-xs">
+                <!-- 票数状态 -->
+                <div class="flex items-center gap-1.5">
+                  <span v-if="topic.stats.locked" class="inline-flex items-center gap-1 text-[11px] text-[#787774] bg-[#f7f6f3] px-2 py-0.5 rounded border border-[#e9e9e7]">
+                    <svg class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    <span>投后公开票数</span>
                   </span>
-                  <span v-else class="text-xs font-bold text-blue-600 flex items-center gap-1">
-                    <span>🔥</span>
-                    <span>{{ topic.stats.count }} 票</span>
-                    <span class="text-zinc-400 font-normal">({{ topic.stats.percentage }}%)</span>
+                  <span v-else class="text-xs font-medium text-[#2f3437] flex items-center gap-1.5">
+                    <span class="font-serif font-bold text-sm">{{ topic.stats.count }} 票</span>
+                    <span class="text-[#787774] text-[11px]">({{ topic.stats.percentage }}%)</span>
                   </span>
                 </div>
 
-                <!-- 折叠/展开详情与心愿留言 -->
+                <!-- 手风琴展开触发按钮 -->
                 <button 
                   @click.stop="toggleExpand(topic.id)"
-                  class="text-xs text-zinc-500 hover:text-zinc-800 font-medium flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-zinc-100 transition">
-                  <span>{{ expandedTopicIds.includes(topic.id) ? '收起详情 ▴' : '大纲与留言 (' + (topic.commentCount || (topicComments[topic.id] || []).length) + ') ▾' }}</span>
+                  class="text-xs text-[#787774] hover:text-[#2f3437] font-medium flex items-center gap-1 py-0.5 px-2 rounded hover:bg-[#f0efe9] transition">
+                  <span>{{ expandedTopicIds.includes(topic.id) ? '收起大纲' : '大纲与研讨 (' + (topic.commentCount || (topicComments[topic.id] || []).length) + ')' }}</span>
+                  <svg 
+                    class="w-3 h-3 transition-transform duration-200" 
+                    :class="expandedTopicIds.includes(topic.id) ? 'rotate-180' : ''"
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                  </svg>
                 </button>
               </div>
             </div>
@@ -264,59 +263,77 @@
             <div 
               class="amie-accordion-body"
               :class="expandedTopicIds.includes(topic.id) ? 'is-open' : ''">
-              <div class="amie-accordion-inner px-3.5 sm:px-4 pb-3.5 pt-1 border-t border-zinc-100/80 bg-zinc-50/50">
-                <!-- 简介摘要 -->
-                <p class="text-xs text-zinc-600 leading-relaxed mb-3">
-                  {{ topic.summary }}
-                </p>
+              <div class="amie-accordion-inner px-4 pb-4 pt-2 border-t border-[#e9e9e7] bg-[#fbfbfa]">
+                
+                <!-- 1. 痛点共鸣设问 (The Hook / 思考锚点) -->
+                <div v-if="topic.hook" class="mb-3.5 p-3 rounded-lg bg-[#f7f6f3] border-l-2 border-[#2f3437] text-xs leading-relaxed text-[#2f3437]">
+                  <p class="font-serif italic font-medium leading-relaxed">“{{ topic.hook }}”</p>
+                </div>
 
-                <!-- 大纲要点 -->
-                <div class="space-y-1.5 mb-3 bg-white p-2.5 rounded-xl border border-zinc-200/60">
-                  <span class="text-[11px] font-bold text-zinc-700 block mb-1">📋 核心研讨大纲</span>
-                  <div v-for="(point, idx) in topic.outline" :key="idx" class="flex items-start gap-1.5 text-xs text-zinc-600">
-                    <span class="w-3.5 h-3.5 rounded-full bg-zinc-100 text-zinc-500 flex items-center justify-center font-bold text-[9px] shrink-0 mt-0.5">{{ idx + 1 }}</span>
-                    <span class="leading-tight">{{ point }}</span>
+                <!-- 2. 结构化研讨大纲 (两段式重点导向) -->
+                <div class="mb-3.5 bg-white p-3 rounded-xl border border-[#e9e9e7]">
+                  <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#f0efe9]">
+                    <span class="text-[11px] font-semibold text-[#787774] uppercase tracking-wider">研讨大纲与核心交付</span>
+                    <span class="text-[10px] text-[#9b9a97]">{{ topic.duration }}</span>
+                  </div>
+                  <div class="space-y-2">
+                    <div 
+                      v-for="(point, idx) in topic.outline" 
+                      :key="idx" 
+                      class="flex items-start gap-2 text-xs">
+                      <span class="font-serif text-[#787774] font-semibold text-[11px] shrink-0 w-4 mt-0.5">{{ String(idx + 1).padStart(2, '0') }}</span>
+                      <div class="leading-snug">
+                        <template v-if="typeof point === 'object'">
+                          <span class="font-semibold text-[#2f3437]">{{ point.tag }}</span>
+                          <span class="text-[#d3d1cb] mx-1">·</span>
+                          <span class="text-[#5a5853]">{{ point.desc }}</span>
+                        </template>
+                        <template v-else>
+                          <span class="text-[#5a5853]">{{ point }}</span>
+                        </template>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <!-- 💬 同学心愿提问箱 -->
+                <!-- 3. 学友期待与提问 (Substack 风格读者讨论流) -->
                 <div class="mt-3">
                   <div class="flex items-center justify-between mb-2">
-                    <span class="text-[11px] font-bold text-zinc-700 flex items-center gap-1">
-                      <span>💬</span>
-                      <span>同学想听心愿与提问 ({{ (topicComments[topic.id] || []).length }})</span>
+                    <span class="text-[11px] font-semibold text-[#787774]">
+                      学友期待与提问 ({{ (topicComments[topic.id] || []).length }})
                     </span>
                   </div>
 
                   <!-- 留言列表 -->
-                  <div class="space-y-1.5 max-h-36 overflow-y-auto no-scrollbar mb-2">
+                  <div class="space-y-1.5 max-h-36 overflow-y-auto no-scrollbar mb-2.5">
                     <div 
                       v-for="c in (topicComments[topic.id] || [])" 
                       :key="c.id" 
-                      class="amie-comment-chip text-xs">
-                      <p class="text-zinc-800 leading-snug">{{ c.text }}</p>
-                      <span class="text-[10px] text-zinc-400 mt-1 block text-right">{{ c.authorName || '朋辈学友' }} · {{ formatTime(c.createdAt) }}</span>
+                      class="p-2 bg-white rounded-lg border border-[#e9e9e7] text-xs">
+                      <p class="text-[#2f3437] leading-snug">{{ c.text }}</p>
+                      <span class="text-[10px] text-[#9b9a97] mt-1 block text-right">{{ c.authorName || '朋辈学友' }} · {{ formatTime(c.createdAt) }}</span>
                     </div>
-                    <div v-if="!topicComments[topic.id] || topicComments[topic.id].length === 0" class="text-center py-2 text-[11px] text-zinc-400">
-                      还没有留言，投出选票时写下你想听的案例吧！
+                    <div v-if="!topicComments[topic.id] || topicComments[topic.id].length === 0" class="text-center py-2 text-[11px] text-[#9b9a97]">
+                      暂无提问，投出选票时写下你想听的实际场景吧
                     </div>
                   </div>
 
                   <!-- 快捷写心愿输入条 -->
-                  <div class="flex items-center gap-1.5 pt-1">
+                  <div class="flex items-center gap-1.5">
                     <input 
                       v-model="newCommentTexts[topic.id]"
                       @keyup.enter="submitQuickComment(topic.id)"
                       type="text" 
-                      placeholder="写下你最期待解答的困惑..." 
-                      class="flex-1 bg-white border border-zinc-200 rounded-xl px-2.5 py-1 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-blue-500">
+                      placeholder="提出你最关心的困惑或想听的场景..." 
+                      class="flex-1 bg-white border border-[#e9e9e7] rounded-lg px-2.5 py-1 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437]">
                     <button 
                       @click="submitQuickComment(topic.id)"
-                      class="amie-btn amie-btn-primary text-xs py-1 px-2.5 rounded-xl shrink-0 font-medium">
+                      class="bg-[#2f3437] hover:bg-[#18181b] text-white text-xs py-1 px-3 rounded-lg shrink-0 font-medium transition">
                       发布
                     </button>
                   </div>
                 </div>
+
               </div>
             </div>
 
@@ -326,63 +343,63 @@
 
       <!-- ================= 视图 2：实时热度排行榜 (投前锁定 / 投后解锁) ================= -->
       <div v-if="activeTab === 'results'">
-        <!-- 投前未解锁状态提示 -->
-        <div v-if="!canSeeResults" class="bg-white/90 rounded-3xl p-8 sm:p-12 text-center border border-zinc-200/80 shadow-xs max-w-lg mx-auto">
-          <div class="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto mb-3 text-2xl shadow-2xs">
-            🔒
+        <!-- 投前锁定保护提示 -->
+        <div v-if="!canSeeResults" class="bg-white rounded-2xl p-8 sm:p-12 text-center border border-[#e9e9e7] shadow-xs max-w-lg mx-auto">
+          <div class="w-10 h-10 rounded-full bg-[#f0efe9] text-[#2f3437] flex items-center justify-center mx-auto mb-3">
+            <svg class="w-5 h-5 text-[#2f3437]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
           </div>
-          <h3 class="text-base font-bold text-zinc-900 mb-1.5">实时热度榜正在火热角逐中</h3>
-          <p class="text-xs text-zinc-500 leading-relaxed mb-5">
-            为防止从众盲投，当前榜单处于保密锁定态。投出你的心仪选票后，将立即为您揭晓全部排期榜单与各主题实时票数！
+          <h3 class="font-serif text-base font-bold text-[#2f3437] mb-1.5">实时热度榜评选中</h3>
+          <p class="text-xs text-[#787774] leading-relaxed mb-5">
+            为防止从众心理影响独立判断，当前榜单处于保密锁定态。投出你的心仪选票后，将立即为您揭晓全部议题实时票数与开讲排序！
           </p>
           <button 
             @click="activeTab = 'vote'; triggerHaptic('medium')"
-            class="amie-btn amie-btn-primary py-2 px-6 rounded-full text-xs font-bold shadow-sm">
-            立即去挑选社课投票 →
+            class="bg-[#2f3437] hover:bg-[#18181b] text-white py-2 px-6 rounded-full text-xs font-semibold shadow-xs transition">
+            前往挑选议题并投票 →
           </button>
         </div>
 
         <!-- 投后已解锁完整榜单 -->
-        <div v-else class="bg-white/90 rounded-3xl p-5 sm:p-8 border border-zinc-200/80 shadow-xs">
+        <div v-else class="bg-white rounded-2xl p-5 sm:p-8 border border-[#e9e9e7] shadow-xs">
           <div class="flex items-center justify-between mb-4">
             <div>
-              <h3 class="text-base font-bold text-zinc-900">社课心愿热度排行</h3>
-              <p class="text-xs text-zinc-400">每张选票都在实时计算中，前 3 名将优先排期开讲</p>
+              <h3 class="font-serif text-base font-bold text-[#2f3437]">社课议题热度排行</h3>
+              <p class="text-xs text-[#787774]">每张选票实时计入，前 3 名将优先排期开讲</p>
             </div>
             <button 
               @click="loadResults" 
-              class="amie-btn amie-btn-secondary text-xs py-1 px-3 rounded-full flex items-center gap-1">
+              class="notion-action-btn text-xs py-1 px-3 rounded text-[#787774] hover:text-[#2f3437] flex items-center gap-1">
               <span>刷新</span>
             </button>
           </div>
 
-          <div class="space-y-3">
+          <div class="space-y-2.5">
             <div 
               v-for="(t, idx) in stats.topicStats" 
               :key="t.id"
-              class="p-3.5 bg-zinc-50/80 rounded-2xl border border-zinc-100 flex items-center gap-3">
+              class="p-3 bg-[#fbfbfa] rounded-xl border border-[#e9e9e7] flex items-center gap-3">
               
-              <!-- 奖牌序号 -->
+              <!-- 序号 -->
               <div 
                 :class="[
-                  idx === 0 ? 'bg-amber-100 text-amber-800 font-extrabold border-amber-300' :
-                  idx === 1 ? 'bg-zinc-200 text-zinc-800 font-bold border-zinc-300' :
-                  idx === 2 ? 'bg-orange-100 text-orange-800 font-bold border-orange-200' :
-                  'bg-white text-zinc-400 border-zinc-200'
+                  idx === 0 ? 'bg-[#2f3437] text-white font-serif font-bold' :
+                  idx === 1 ? 'bg-[#5a5853] text-white font-serif font-medium' :
+                  idx === 2 ? 'bg-[#787774] text-white font-serif font-medium' :
+                  'bg-[#f0efe9] text-[#787774] font-serif'
                 ]"
-                class="w-7 h-7 rounded-xl border flex items-center justify-center text-xs shrink-0 shadow-2xs">
+                class="w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0">
                 {{ idx + 1 }}
               </div>
 
               <!-- 主题与进度条 -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between gap-2 mb-1">
-                  <h4 class="font-bold text-zinc-900 text-xs sm:text-sm truncate">{{ t.title }}</h4>
-                  <span class="text-xs font-extrabold text-blue-600 shrink-0">{{ t.count }} 票 <span class="text-zinc-400 font-normal text-[10px]">({{ t.percentage }}%)</span></span>
+                  <h4 class="font-medium text-[#2f3437] text-xs sm:text-sm truncate">{{ t.title }}</h4>
+                  <span class="text-xs font-semibold text-[#2f3437] shrink-0 font-serif">{{ t.count }} 票 <span class="text-[#787774] font-normal text-[10px]">({{ t.percentage }}%)</span></span>
                 </div>
-                <div class="w-full bg-zinc-200 h-1.5 rounded-full overflow-hidden">
+                <div class="w-full bg-[#e9e9e7] h-1.5 rounded-full overflow-hidden">
                   <div 
-                    class="bg-blue-600 h-full rounded-full transition-all duration-500"
+                    class="bg-[#2f3437] h-full rounded-full transition-all duration-500"
                     :style="{ width: t.percentage + '%' }">
                   </div>
                 </div>
@@ -393,73 +410,71 @@
       </div>
     </main>
 
-    <!-- ================= 居中 Amie 灵动胶囊浮动岛 (Floating Island Dock) ================= -->
+    <!-- ================= 居中极简浮动岛底栏 (Notion Charcoal Dock) ================= -->
     <div 
       v-if="activeTab === 'vote'" 
-      class="amie-island-dock">
+      class="notion-island-dock">
       
       <!-- 选票统计文本 -->
-      <div class="text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap">
-        <span>🗳️</span>
-        <span v-if="selectedTopicIds.length === 0">挑选心仪社课 (至多3票)</span>
-        <span v-else>已选 {{ selectedTopicIds.length }} 门社课</span>
+      <div class="text-xs font-medium flex items-center gap-2 whitespace-nowrap text-[#fbfbfa]">
+        <span v-if="selectedTopicIds.length === 0">请选择心仪议题（至多 3 门）</span>
+        <span v-else>已选 {{ selectedTopicIds.length }} / {{ settings.maxVotesPerUser || 3 }} 门议题</span>
       </div>
 
       <!-- 提交 / 修改按钮 -->
       <button 
         @click="handlePreSubmit" 
         :disabled="selectedTopicIds.length === 0"
-        :class="selectedTopicIds.length > 0 ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md' : 'bg-zinc-700 text-zinc-400 cursor-not-allowed'"
-        class="py-1.5 px-4 rounded-full text-xs font-bold transition-all duration-200 flex items-center gap-1 whitespace-nowrap">
-        <span>{{ hasVoted ? '更新我的选票' : '确认投出选票' }}</span>
+        :class="selectedTopicIds.length > 0 ? 'bg-white hover:bg-zinc-100 text-[#23272e] shadow-xs font-medium' : 'bg-[#3f444e] text-[#9b9a97] cursor-not-allowed'"
+        class="py-1 px-3.5 rounded-full text-xs transition-all duration-200 flex items-center gap-1 whitespace-nowrap">
+        <span>{{ hasVoted ? '更新选票' : '确认投出选票' }}</span>
         <span>→</span>
       </button>
     </div>
 
     <!-- ================= 弹窗：确认投出选票与心愿提问箱 (Zero Friction) ================= -->
     <div v-if="showConfirmModal" class="modal-overlay" @click.self="showConfirmModal = false">
-      <div class="modal-content max-w-sm w-full p-6 text-center">
+      <div class="modal-content max-w-sm w-full p-6 text-left bg-white border border-[#e9e9e7] rounded-2xl shadow-xl">
         <div class="modal-sheet-handle"></div>
-        <div class="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto mb-3 text-xl shadow-2xs">
-          ✉️
+        <div class="mb-3">
+          <h3 class="font-serif text-base font-bold text-[#2f3437] mb-1">确认投出选票</h3>
+          <p class="text-xs text-[#787774]">无需学号密码 · 校园网络直连 · 投出后解锁热度榜</p>
         </div>
-        <h3 class="text-base font-bold text-zinc-900 mb-1">确认投出选票</h3>
-        <p class="text-xs text-zinc-400 mb-4">无需密码 · 校园网络友好 · 即刻解锁热度榜</p>
 
         <!-- 已选卡片胶囊摘要 -->
-        <div class="space-y-1.5 mb-4 text-left max-h-32 overflow-y-auto no-scrollbar">
+        <div class="space-y-1.5 mb-3.5 max-h-32 overflow-y-auto no-scrollbar">
           <div 
             v-for="t in selectedTopics" 
             :key="t.id" 
-            class="p-2 bg-zinc-50 rounded-xl border border-zinc-200/70 text-xs font-medium text-zinc-800 flex items-center gap-2">
-            <span class="text-blue-600 font-bold">✓</span>
+            class="p-2 bg-[#f7f6f3] rounded-lg border border-[#e9e9e7] text-xs font-medium text-[#2f3437] flex items-center justify-between gap-2">
             <span class="truncate">{{ t.title }}</span>
+            <span class="text-[10px] text-[#787774] shrink-0">{{ t.category }}</span>
           </div>
         </div>
 
         <!-- 选填心愿提问箱 -->
-        <div class="text-left mb-4">
-          <label class="block text-[11px] font-bold text-zinc-700 mb-1">
-            💬 附带想听心愿 / 向讲师提问 (选填)
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-[#2f3437] mb-1">
+            附带想听心愿 / 向讲师提问 (选填)
           </label>
           <textarea 
             v-model="votingComment"
             rows="2"
-            placeholder="写下你最期待解决的问题或想听的真实案例，将展示在社课留言墙上..."
-            class="w-full bg-zinc-50 border border-zinc-200 rounded-xl p-2 text-xs text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-blue-500"></textarea>
+            placeholder="写下你最期待解答的实际困惑或想听的真实案例..."
+            class="w-full bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg p-2 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437]"></textarea>
         </div>
 
         <div class="flex items-center gap-2">
           <button 
             @click="showConfirmModal = false" 
-            class="w-1/3 amie-btn amie-btn-secondary text-xs py-2 rounded-xl">
+            class="w-1/3 text-xs py-2 rounded-lg border border-[#e9e9e7] text-[#787774] hover:bg-[#f7f6f3]">
             返回
           </button>
           <button 
             @click="confirmSubmitVote" 
             :disabled="submittingVote"
-            class="flex-1 amie-btn amie-btn-primary text-xs py-2 rounded-xl font-bold">
-            {{ submittingVote ? '正在投出...' : '投出选票' }}
+            class="flex-1 bg-[#2f3437] hover:bg-[#18181b] text-white text-xs py-2 rounded-lg font-medium transition">
+            {{ submittingVote ? '正在投递...' : '确认投递' }}
           </button>
         </div>
       </div>
@@ -467,25 +482,25 @@
 
     <!-- ================= 弹窗：管理后台 (密码登录) ================= -->
     <div v-if="showAdminModal" class="modal-overlay" @click.self="showAdminModal = false">
-      <div class="modal-content max-w-lg w-full p-6 max-h-[85vh] flex flex-col">
+      <div class="modal-content max-w-lg w-full p-6 max-h-[85vh] flex flex-col bg-white border border-[#e9e9e7] rounded-2xl">
         <div class="modal-sheet-handle"></div>
 
         <!-- 管理员未登录界面 -->
         <div v-if="!isAdmin" class="py-4 text-center">
-          <h3 class="text-base font-bold text-zinc-900 mb-1">管理员身份核验</h3>
-          <p class="text-xs text-zinc-400 mb-4">输入管理员口令管理社课与配置</p>
+          <h3 class="font-serif text-base font-bold text-[#2f3437] mb-1">管理员身份核验</h3>
+          <p class="text-xs text-[#787774] mb-4">输入管理员口令管理社课与配置</p>
           <form @submit.prevent="handleAdminLogin" class="space-y-3 max-w-xs mx-auto text-xs">
             <input 
               v-model="adminLoginForm.username" 
               type="text" 
               placeholder="管理员账号 (admin)" 
-              class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
+              class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437]">
             <input 
               v-model="adminLoginForm.password" 
               type="password" 
               placeholder="密码 (admin123)" 
-              class="w-full border border-zinc-200 rounded-xl p-2 bg-zinc-50">
-            <button type="submit" class="w-full amie-btn amie-btn-primary py-2 rounded-xl font-bold text-xs">
+              class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437]">
+            <button type="submit" class="w-full bg-[#2f3437] text-white py-2 rounded-lg font-medium text-xs">
               登录管理后台
             </button>
           </form>
@@ -493,57 +508,57 @@
 
         <!-- 管理员已登录面板 -->
         <div v-else class="flex flex-col flex-1 overflow-hidden">
-          <div class="flex items-center justify-between pb-3 border-b border-zinc-100 mb-3">
+          <div class="flex items-center justify-between pb-3 border-b border-[#e9e9e7] mb-3">
             <div class="flex items-center gap-2">
-              <span class="font-bold text-zinc-900 text-sm">社课管理中心</span>
-              <span class="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-semibold">管理员</span>
+              <span class="font-serif font-bold text-[#2f3437] text-sm">社课管理中心</span>
+              <span class="text-[10px] bg-[#f0efe9] text-[#5a5853] px-2 py-0.5 rounded font-medium">管理员</span>
             </div>
-            <button @click="handleAdminLogout" class="text-xs text-zinc-400 hover:text-zinc-600">退出</button>
+            <button @click="handleAdminLogout" class="text-xs text-[#787774] hover:text-[#2f3437]">退出</button>
           </div>
 
           <div class="flex items-center gap-2 mb-3">
             <button 
               @click="adminActiveTab = 'topics'" 
-              :class="adminActiveTab === 'topics' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600'"
-              class="text-xs py-1 px-3 rounded-full font-medium">
+              :class="adminActiveTab === 'topics' ? 'bg-[#2f3437] text-white' : 'bg-[#f0efe9] text-[#787774]'"
+              class="text-xs py-1 px-3 rounded font-medium">
               社课管理
             </button>
             <button 
               @click="adminActiveTab = 'ballots'; loadBallots();" 
-              :class="adminActiveTab === 'ballots' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600'"
-              class="text-xs py-1 px-3 rounded-full font-medium">
+              :class="adminActiveTab === 'ballots' ? 'bg-[#2f3437] text-white' : 'bg-[#f0efe9] text-[#787774]'"
+              class="text-xs py-1 px-3 rounded font-medium">
               选票明细 ({{ ballots.length }})
             </button>
           </div>
 
           <!-- 选项卡 1：社课管理 -->
           <div v-if="adminActiveTab === 'topics'" class="overflow-y-auto flex-1 space-y-2 pr-1">
-            <div v-for="t in topics" :key="t.id" class="p-2.5 bg-zinc-50 rounded-xl border border-zinc-100 flex items-center justify-between text-xs">
+            <div v-for="t in topics" :key="t.id" class="p-2.5 bg-[#fbfbfa] rounded-lg border border-[#e9e9e7] flex items-center justify-between text-xs">
               <div class="truncate mr-2">
-                <span class="font-bold text-zinc-800">{{ t.title }}</span>
-                <span class="text-zinc-400 text-[10px] ml-1">({{ t.speaker }})</span>
+                <span class="font-medium text-[#2f3437]">{{ t.title }}</span>
+                <span class="text-[#787774] text-[10px] ml-1">({{ t.speaker }})</span>
               </div>
-              <span class="text-blue-600 font-bold shrink-0">{{ t.stats.count || 0 }} 票</span>
+              <span class="font-serif font-bold text-[#2f3437] shrink-0">{{ t.stats.count || 0 }} 票</span>
             </div>
           </div>
 
           <!-- 选项卡 2：选票与数据导出 -->
           <div v-else-if="adminActiveTab === 'ballots'" class="overflow-y-auto flex-1 space-y-2 pr-1">
             <div class="flex items-center justify-between mb-2">
-              <button @click="exportCsv" class="amie-btn amie-btn-primary text-xs py-1 px-3 rounded-full">
-                📥 导出 Excel CSV 表格
+              <button @click="exportCsv" class="text-xs py-1 px-3 rounded bg-[#2f3437] text-white font-medium">
+                导出 Excel CSV 表格
               </button>
-              <button @click="clearVotes" class="text-rose-500 hover:text-rose-700 text-xs">
+              <button @click="clearVotes" class="text-rose-600 hover:text-rose-800 text-xs">
                 清空重置选票
               </button>
             </div>
-            <div v-for="b in ballots" :key="b.id" class="p-2.5 bg-zinc-50 rounded-xl border border-zinc-100 text-xs space-y-0.5">
-              <div class="flex justify-between font-bold text-zinc-800 text-[11px]">
+            <div v-for="b in ballots" :key="b.id" class="p-2.5 bg-[#fbfbfa] rounded-lg border border-[#e9e9e7] text-xs space-y-0.5">
+              <div class="flex justify-between font-medium text-[#2f3437] text-[11px]">
                 <span>选票 #{{ b.id.slice(-6) }}</span>
-                <span class="text-zinc-400 font-normal">{{ new Date(b.votedAt).toLocaleTimeString() }}</span>
+                <span class="text-[#9b9a97] font-normal">{{ new Date(b.votedAt).toLocaleTimeString() }}</span>
               </div>
-              <div class="text-zinc-600 text-[11px]">所选：{{ b.topicTitles.join('；') }}</div>
-              <div v-if="b.comment" class="text-blue-600 text-[10px] italic">心愿：{{ b.comment }}</div>
+              <div class="text-[#5a5853] text-[11px]">所选：{{ b.topicTitles.join('；') }}</div>
+              <div v-if="b.comment" class="text-[#787774] text-[10px] italic">心愿：{{ b.comment }}</div>
             </div>
           </div>
         </div>
@@ -552,13 +567,13 @@
 
     <!-- 手机分享二维码弹窗 -->
     <div v-if="showQrModal" class="modal-overlay" @click.self="showQrModal = false">
-      <div class="modal-content max-w-xs w-full p-6 text-center">
-        <h3 class="text-sm font-bold text-zinc-900 mb-1">手机扫码直接投票</h3>
-        <p class="text-xs text-zinc-400 mb-3">支持微信内置扫一扫或浏览器直接打开</p>
-        <div class="p-3 bg-white rounded-2xl border border-zinc-200 inline-block mb-3 shadow-xs">
+      <div class="modal-content max-w-xs w-full p-6 text-center bg-white border border-[#e9e9e7] rounded-2xl">
+        <h3 class="font-serif text-sm font-bold text-[#2f3437] mb-1">手机扫码直接投票</h3>
+        <p class="text-xs text-[#787774] mb-3">支持微信内置扫一扫或浏览器直接打开</p>
+        <div class="p-3 bg-white rounded-xl border border-[#e9e9e7] inline-block mb-3">
           <div id="qrcode" class="flex items-center justify-center"></div>
         </div>
-        <button @click="copyMobileUrl" class="w-full amie-btn amie-btn-primary text-xs py-2 rounded-xl font-bold">
+        <button @click="copyMobileUrl" class="w-full bg-[#2f3437] text-white text-xs py-2 rounded-lg font-medium">
           复制链接分享到微信群
         </button>
       </div>
@@ -567,8 +582,8 @@
     <!-- 浮动 Toast 提示 -->
     <div 
       v-if="toast.show" 
-      class="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-lg text-xs font-semibold flex items-center gap-2 border amie-toast"
-      :class="toast.type === 'success' ? 'bg-zinc-900 text-white' : 'bg-amber-500 text-white'">
+      class="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-md text-xs font-medium flex items-center gap-2 border border-black/10 amie-toast"
+      :class="toast.type === 'success' ? 'bg-[#2f3437] text-white' : 'bg-amber-600 text-white'">
       <span>{{ toast.message }}</span>
     </div>
   </div>
