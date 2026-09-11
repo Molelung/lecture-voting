@@ -408,6 +408,147 @@
           </div>
         </div>
       </div>
+
+      <!-- ================= 学友留言与期待 (公共交流讨论区 · 无论是否投票均可自由交流) ================= -->
+      <section class="mt-14 pt-8 border-t border-[#e9e9e7]">
+        <!-- 区域标头 -->
+        <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 mb-5">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="font-serif text-base sm:text-lg font-bold text-[#2f3437] tracking-tight">学友留言与交流</h3>
+              <span class="text-[11px] font-mono text-[#787774] bg-[#f0efe9] px-2 py-0.5 rounded-full">
+                {{ publicComments.length }} 条探讨
+              </span>
+            </div>
+            <p class="text-xs text-[#787774]">
+              无论是否已投票均可自由交流 · 畅谈对社课选题的想法、期待开讲的具体内容或给主讲人的建议
+            </p>
+          </div>
+
+          <!-- 留言筛选器 -->
+          <div class="flex items-center gap-1.5 self-start sm:self-auto">
+            <select 
+              v-model="commentFilterTopicId"
+              class="bg-white border border-[#e9e9e7] rounded-lg px-2.5 py-1 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437] transition">
+              <option value="all">全部留言流 ({{ publicComments.length }})</option>
+              <option value="general">公共留言 / 通用期待</option>
+              <option v-for="t in topics" :key="t.id" :value="t.id">
+                {{ t.title.length > 14 ? t.title.slice(0, 14) + '...' : t.title }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 留言发表卡片 (Notion 智性白底设计) -->
+        <div class="bg-white border border-[#e9e9e7] rounded-xl p-4 sm:p-5 shadow-2xs mb-6 transition focus-within:border-[#2f3437]">
+          <!-- 顶层配置：称呼与关联社课 -->
+          <div class="flex flex-wrap items-center gap-3 mb-3">
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-medium text-[#787774]">称呼：</span>
+              <input 
+                v-model="newPublicComment.authorName"
+                type="text" 
+                maxlength="15"
+                placeholder="朋辈学友（选填）"
+                class="w-32 bg-[#fbfbfa] border border-[#e9e9e7] rounded-md px-2.5 py-1 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437]">
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-medium text-[#787774]">关联社课：</span>
+              <select 
+                v-model="newPublicComment.topicId"
+                class="max-w-[200px] sm:max-w-xs bg-[#fbfbfa] border border-[#e9e9e7] rounded-md px-2.5 py-1 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437]">
+                <option value="general">公共留言 / 通用期待</option>
+                <option v-for="t in topics" :key="t.id" :value="t.id">
+                  {{ t.title.length > 16 ? t.title.slice(0, 16) + '...' : t.title }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 留言多行输入框 -->
+          <textarea 
+            v-model="newPublicComment.text"
+            rows="3"
+            maxlength="200"
+            placeholder="写下你最感兴趣的具体方向、想听的实际案例，或是对社课开展形式的建议..."
+            class="w-full bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg p-3 text-xs sm:text-sm text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] transition resize-none"></textarea>
+
+          <!-- 底部控制栏：字数与提交 -->
+          <div class="flex items-center justify-between mt-3 pt-2.5 border-t border-[#f7f6f3]">
+            <span class="text-[11px] font-mono text-[#9b9a97]">
+              {{ (newPublicComment.text || '').length }} / 200 字
+            </span>
+            <button 
+              @click="submitPublicComment"
+              :disabled="!newPublicComment.text.trim() || submittingPublicComment"
+              :class="newPublicComment.text.trim() && !submittingPublicComment ? 'bg-[#2f3437] hover:bg-[#18181b] text-white shadow-xs cursor-pointer' : 'bg-[#e9e9e7] text-[#9b9a97] cursor-not-allowed'"
+              class="px-4 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5">
+              <span>{{ submittingPublicComment ? '发布中...' : '发表留言' }}</span>
+              <span v-if="!submittingPublicComment">→</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 留言列表流 -->
+        <div v-if="filteredPublicComments.length > 0" class="space-y-2.5">
+          <div 
+            v-for="c in filteredPublicComments" 
+            :key="c.id"
+            class="bg-white border border-[#e9e9e7] rounded-xl p-3.5 sm:p-4 transition hover:border-[#d3d1cb]">
+            <!-- 留言头信息 -->
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2 flex-wrap">
+                <!-- 极简字头图标 -->
+                <div class="w-5 h-5 rounded-full bg-[#f0efe9] text-[#787774] flex items-center justify-center text-[10px] font-serif font-bold uppercase shrink-0">
+                  {{ (c.authorName || '学').slice(0, 1) }}
+                </div>
+                <span class="text-xs font-semibold text-[#2f3437]">{{ c.authorName || '朋辈学友' }}</span>
+                <!-- 关联主题标签 -->
+                <span 
+                  v-if="c.topicId && c.topicId !== 'general'"
+                  class="text-[10px] font-medium bg-[#f7f6f3] text-[#787774] border border-[#e9e9e7] px-1.5 py-0.5 rounded">
+                  关于：{{ getTopicShortTitle(c.topicId) }}
+                </span>
+                <span 
+                  v-else
+                  class="text-[10px] font-medium bg-[#f0efe9] text-[#9b9a97] px-1.5 py-0.5 rounded">
+                  公共留言
+                </span>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-[11px] text-[#9b9a97]">{{ formatTime(c.createdAt) }}</span>
+                <!-- 管理员删除按钮 -->
+                <button 
+                  v-if="isAdmin"
+                  @click="deleteComment(c.id)"
+                  class="text-[10px] text-red-500 hover:text-red-700 underline"
+                  title="删除此留言">
+                  删除
+                </button>
+              </div>
+            </div>
+
+            <!-- 留言正文 -->
+            <p class="text-xs sm:text-sm text-[#37352f] leading-relaxed whitespace-pre-wrap break-words pl-7">
+              {{ c.text }}
+            </p>
+          </div>
+        </div>
+
+        <!-- 暂无留言空状态 -->
+        <div 
+          v-else 
+          class="text-center py-10 bg-white border border-[#e9e9e7] rounded-xl">
+          <div class="w-8 h-8 mx-auto rounded-full bg-[#f0efe9] text-[#9b9a97] flex items-center justify-center mb-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+            </svg>
+          </div>
+          <p class="text-xs text-[#787774] font-medium">暂无相关留言</p>
+          <p class="text-[11px] text-[#9b9a97] mt-0.5">欢迎在上方输入框写下你的第一个想法或建议</p>
+        </div>
+      </section>
     </main>
 
     <!-- ================= 居中极简浮动岛底栏 (Notion Charcoal Dock) ================= -->
@@ -455,7 +596,7 @@
         <!-- 选填心愿提问箱 -->
         <div class="mb-4">
           <label class="block text-xs font-medium text-[#2f3437] mb-1">
-            附带想听心愿 / 向讲师提问 (选填)
+            附带心愿 / 提问 (选填，亦可在下方留言区随时交流)
           </label>
           <textarea 
             v-model="votingComment"

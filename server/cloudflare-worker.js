@@ -541,7 +541,82 @@ export default {
         }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
-      // 5. GET /api/topics/:id/comments & POST /api/topics/:id/comments (公开社课留言墙)
+      // 5. GET /api/comments & POST /api/comments (公共交流讨论留言区)
+      if (path === '/api/comments') {
+        if (method === 'GET') {
+          const comments = await getCachedKV(KV, 'comments', TTL.COMMENTS) || [];
+          const list = comments.map(c => ({
+            id: c.id,
+            topicId: c.topicId || 'general',
+            topicTitle: c.topicTitle || '',
+            text: c.text,
+            authorName: c.authorName || '朋辈学友',
+            createdAt: c.createdAt
+          }));
+          const dur = Date.now() - startTime;
+          return jsonResponse({ success: true, comments: list }, 200, {
+            'Cache-Control': 'no-cache',
+            'Server-Timing': `app;dur=${dur}`
+          });
+        }
+
+        if (method === 'POST') {
+          // 限流检查 (每分钟最多 10 次留言)
+          if (!checkRateLimit(clientIp, 10, 60000)) {
+            return jsonResponse({ error: '发言过于频繁，请稍息后再试' }, 429);
+          }
+
+          const body = await request.json().catch(() => ({}));
+          const cleanText = sanitizeText(body.text, 200);
+          if (!cleanText) {
+            return jsonResponse({ error: '留言内容不能为空' }, 400);
+          }
+          const cleanAuthor = sanitizeText(body.authorName, 20) || '朋辈学友';
+          const topicId = body.topicId || 'general';
+          let topicTitle = '';
+          if (topicId !== 'general') {
+            const topics = await getCachedKV(KV, 'topics', TTL.TOPICS) || [];
+            const found = topics.find(t => t.id === topicId);
+            if (found) topicTitle = found.title;
+          }
+
+          let comments = await KV.get('comments').then(r => r ? JSON.parse(r) : []);
+          const newComment = {
+            id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+            topicId,
+            topicTitle,
+            voterId: voterToken || 'anon',
+            authorName: cleanAuthor,
+            text: cleanText,
+            createdAt: new Date().toISOString()
+          };
+
+          comments.unshift(newComment);
+          if (comments.length > 300) comments = comments.slice(0, 300);
+          await KV.put('comments', JSON.stringify(comments));
+          MEM_CACHE.comments.exp = 0;
+
+          const dur = Date.now() - startTime;
+          return jsonResponse({ success: true, message: '留言已发布！', comment: newComment }, 200, {
+            'Server-Timing': `app;dur=${dur}`
+          });
+        }
+      }
+
+      // DELETE /api/comments/:id (管理员管理不当留言)
+      if (path.startsWith('/api/comments/') && method === 'DELETE') {
+        if (!isAdmin) {
+          return jsonResponse({ error: '无权执行此操作' }, 403);
+        }
+        const commentId = path.split('/')[3];
+        let comments = await KV.get('comments').then(r => r ? JSON.parse(r) : []);
+        comments = comments.filter(c => c.id !== commentId);
+        await KV.put('comments', JSON.stringify(comments));
+        MEM_CACHE.comments.exp = 0;
+        return jsonResponse({ success: true, message: '留言已删除' });
+      }
+
+      // 6. GET /api/topics/:id/comments & POST /api/topics/:id/comments (单门社课大纲内研讨墙)
       if (path.startsWith('/api/topics/') && path.endsWith('/comments')) {
         const parts = path.split('/');
         const topicId = parts[3];
@@ -570,13 +645,14 @@ export default {
           if (!cleanText) {
             return jsonResponse({ error: '留言内容不能为空' }, 400);
           }
+          const cleanAuthor = sanitizeText(body.authorName, 20) || '朋辈学友';
 
           let comments = await KV.get('comments').then(r => r ? JSON.parse(r) : []);
           const newComment = {
             id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
             topicId,
             voterId: voterToken || 'anon',
-            authorName: '朋辈学友',
+            authorName: cleanAuthor,
             text: cleanText,
             createdAt: new Date().toISOString()
           };
@@ -590,7 +666,7 @@ export default {
         }
       }
 
-      // 6. 管理员登录
+      // 7. 管理员登录
       if (path === '/api/auth/login' && method === 'POST') {
         const body = await request.json().catch(() => ({}));
         const { username, password } = body;

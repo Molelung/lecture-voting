@@ -56,6 +56,17 @@ createApp({
     const topicComments = ref({});
     const newCommentTexts = ref({});
 
+    // 公共社区讨论留言板状态 (随时自由留言，无需投票即可畅所欲言)
+    const publicComments = ref([]);
+    const publicCommentsLoading = ref(false);
+    const commentFilterTopicId = ref('all'); // 'all' | 'general' | specific topicId
+    const newPublicComment = ref({
+      authorName: '',
+      topicId: 'general',
+      text: ''
+    });
+    const submittingPublicComment = ref(false);
+
     // 手机分享
     const mobileUrl = ref(window.location.href.split('?')[0].split('#')[0]);
     const showQrModal = ref(false);
@@ -155,6 +166,9 @@ createApp({
         // 加载社课卡片
         await loadTopics();
 
+        // 加载全站公共讨论区留言
+        await loadPublicComments();
+
         // 加载榜单（若已投票或管理员）
         if (canSeeResults.value) {
           await loadResults();
@@ -238,6 +252,91 @@ createApp({
       const diffHour = Math.floor(diffMin / 60);
       if (diffHour < 24) return `${diffHour}小时前`;
       return `${d.getMonth() + 1}月${d.getDate()}日`;
+    };
+
+    // 公共留言筛选计算
+    const filteredPublicComments = computed(() => {
+      if (commentFilterTopicId.value === 'all') {
+        return publicComments.value;
+      }
+      return publicComments.value.filter(c => (c.topicId || 'general') === commentFilterTopicId.value);
+    });
+
+    // 获取议题简称
+    const getTopicShortTitle = (tid) => {
+      if (!tid || tid === 'general') return '公共留言';
+      const found = topics.value.find(t => t.id === tid);
+      if (found) {
+        return found.title.length > 14 ? found.title.slice(0, 14) + '...' : found.title;
+      }
+      return '社课议题';
+    };
+
+    // 加载全站公共讨论区留言
+    const loadPublicComments = async () => {
+      publicCommentsLoading.value = true;
+      try {
+        const res = await api('/api/comments');
+        publicComments.value = res.comments || [];
+      } catch (e) {
+        console.error('加载公共留言失败:', e);
+      } finally {
+        publicCommentsLoading.value = false;
+      }
+    };
+
+    // 提交公共交流区留言（全员免投自由发言）
+    const submitPublicComment = async () => {
+      const text = (newPublicComment.value.text || '').trim();
+      if (!text) {
+        showToast('请输入留言内容', 'warning');
+        return;
+      }
+      submittingPublicComment.value = true;
+      triggerHaptic('medium');
+      try {
+        const res = await api('/api/comments', {
+          method: 'POST',
+          body: JSON.stringify({
+            text,
+            authorName: (newPublicComment.value.authorName || '').trim() || '朋辈学友',
+            topicId: newPublicComment.value.topicId || 'general'
+          })
+        });
+        publicComments.value.unshift(res.comment);
+
+        // 如果关联了具体社课，同步更新单课大纲留言列表与议题留言数
+        if (res.comment.topicId && res.comment.topicId !== 'general') {
+          if (!topicComments.value[res.comment.topicId]) {
+            topicComments.value[res.comment.topicId] = [];
+          }
+          topicComments.value[res.comment.topicId].unshift(res.comment);
+          const t = topics.value.find(item => item.id === res.comment.topicId);
+          if (t) t.commentCount = (t.commentCount || 0) + 1;
+        }
+
+        newPublicComment.value.text = '';
+        showToast('留言已成功发布！', 'success');
+      } catch (e) {
+        showToast(e.message || '留言发布失败', 'error');
+      } finally {
+        submittingPublicComment.value = false;
+      }
+    };
+
+    // 删除留言（管理员权限）
+    const deleteComment = async (commentId) => {
+      if (!confirm('确定删除该留言吗？此操作不可逆。')) return;
+      try {
+        await api(`/api/comments/${commentId}`, { method: 'DELETE' });
+        publicComments.value = publicComments.value.filter(c => c.id !== commentId);
+        Object.keys(topicComments.value).forEach(tid => {
+          topicComments.value[tid] = (topicComments.value[tid] || []).filter(c => c.id !== commentId);
+        });
+        showToast('留言已删除', 'info');
+      } catch (e) {
+        showToast(e.message || '删除失败', 'error');
+      }
     };
 
     // 分类胶囊样式
@@ -342,9 +441,10 @@ createApp({
         userVote.value = res.vote;
         showConfirmModal.value = false;
 
-        // 即刻解锁票数与热度排行榜
+        // 即刻解锁票数与热度排行榜及公共讨论区
         await loadTopics();
         await loadResults();
+        await loadPublicComments();
       } catch (err) {
         console.error('投票失败:', err);
       } finally {
@@ -393,17 +493,15 @@ createApp({
     };
 
     const copyMobileUrl = async () => {
-      triggerHaptic('light');
-      const url = mobileUrl.value;
       try {
-        await navigator.clipboard.writeText(url);
-        showToast('投票链接已复制到剪贴板！', 'success');
+        await navigator.clipboard.writeText(mobileUrl.value);
+        showToast('投票系统专属链接已复制到剪贴板！', 'success');
       } catch (e) {
-        showToast(`链接: ${url}`, 'info');
+        showToast('复制失败，请手动长按复制地址', 'warning');
       }
     };
 
-    // 管理员登录与登出
+    // 管理员相关操作
     const openAdminModal = () => {
       showAdminModal.value = true;
       if (isAdmin.value) {
@@ -420,13 +518,11 @@ createApp({
         adminToken.value = res.token;
         localStorage.setItem('lecture_admin_token', res.token);
         isAdmin.value = true;
-        showToast('管理员登录成功', 'success');
-        adminLoginForm.value = { username: 'admin', password: '' };
-        await loadTopics();
-        await loadResults();
-        await loadBallots();
+        showToast('管理员凭据校验成功', 'success');
+        loadBallots();
+        loadResults();
       } catch (e) {
-        showToast(e.message, 'error');
+        showToast(e.message || '账号或密码错误', 'error');
       }
     };
 
@@ -434,40 +530,43 @@ createApp({
       adminToken.value = '';
       localStorage.removeItem('lecture_admin_token');
       isAdmin.value = false;
-      showToast('已退出管理后台', 'info');
+      showToast('已安全登出管理后台', 'info');
     };
 
     const loadBallots = async () => {
       try {
         const res = await api('/api/admin/ballots');
-        ballots.value = res.ballots;
-      } catch (e) {}
+        ballots.value = res.ballots || [];
+      } catch (e) {
+        showToast('读取计票详情失败: ' + e.message, 'error');
+      }
     };
 
     const clearVotes = async () => {
-      if (!confirm('确定要清空所有已提交的选票和留言吗？此操作无法撤销。')) return;
+      if (!confirm('【危险操作】确定清空所有投票记录和留言吗？此操作不可撤销！')) return;
       try {
-        await api('/api/admin/clear-votes', { method: 'POST' });
-        showToast('选票已重置清空', 'success');
-        selectedTopicIds.value = [];
-        hasVoted.value = false;
-        userVote.value = null;
-        await loadTopics();
-        await loadResults();
-        await loadBallots();
-      } catch (e) {}
+        await api('/api/admin/reset-votes', { method: 'POST' });
+        showToast('全量数据已安全重置！', 'success');
+        ballots.value = [];
+        await initData();
+      } catch (e) {
+        showToast('重置失败: ' + e.message, 'error');
+      }
     };
 
-    // 导出 Excel 兼容 CSV (带 UTF-8 BOM)
     const exportCsv = () => {
-      if (!ballots.value || ballots.value.length === 0) {
-        showToast('暂无已提交的选票可供导出', 'warning');
+      if (!ballots.value.length) {
+        showToast('暂无投票记录可导出', 'warning');
         return;
       }
-      const headers = ['选票ID', '所投社课主题', '附带心愿/提问留言', '投票时间'];
+      const headers = ['选票ID', '设备指纹/标识', '所选社课', '附带留言', '投票时间'];
       const rows = ballots.value.map(b => [
-        `"${b.id || ''}"`,
-        `"${(b.topicTitles || []).join('；')}"`,
+        `"${b.id}"`,
+        `"${b.voterId || b.voterToken || ''}"`,
+        `"${(b.topicIds || []).map(id => {
+          const t = topics.value.find(x => x.id === id);
+          return t ? t.title : id;
+        }).join('; ')}"`,
         `"${(b.comment || '').replace(/"/g, '""')}"`,
         `"${b.votedAt ? new Date(b.votedAt).toLocaleString('zh-CN') : ''}"`
       ]);
@@ -511,6 +610,16 @@ createApp({
       expandedTopicIds,
       topicComments,
       newCommentTexts,
+      publicComments,
+      publicCommentsLoading,
+      commentFilterTopicId,
+      filteredPublicComments,
+      newPublicComment,
+      submittingPublicComment,
+      getTopicShortTitle,
+      loadPublicComments,
+      submitPublicComment,
+      deleteComment,
       mobileUrl,
       showQrModal,
       toast,
