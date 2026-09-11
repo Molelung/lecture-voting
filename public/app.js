@@ -140,6 +140,13 @@ createApp({
       }, 3000);
     };
 
+    // API 端点配置 (支持国内优化直连域名与 Cloudflare Worker 容灾自动切换)
+    const PRIMARY_API = 'https://vote.listener.ccwu.cc';
+    const FALLBACK_API = 'https://lecture-voting-api.mokelin-studio.workers.dev';
+    const IS_LOCAL = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    let activeApiBase = IS_LOCAL ? '' : PRIMARY_API;
+
     // API 请求封装
     const api = async (url, options = {}) => {
       const headers = {
@@ -147,14 +154,32 @@ createApp({
         ...(token.value ? { 'Authorization': `Bearer ${token.value}` } : {}),
         ...options.headers
       };
-      try {
-        const res = await fetch(url, { ...options, headers });
+
+      const doFetch = async (baseUrl) => {
+        const fullUrl = url.startsWith('/api') && baseUrl ? `${baseUrl}${url}` : url;
+        const res = await fetch(fullUrl, { ...options, headers });
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.error || '请求出错');
         }
         return data;
+      };
+
+      try {
+        return await doFetch(activeApiBase);
       } catch (err) {
+        // 如果主域名在某些网络遇到波动，自动降级切换至备用 Worker 节点
+        if (!IS_LOCAL && activeApiBase === PRIMARY_API) {
+          try {
+            console.warn('主域名连接重试中，正在自动切换备用 Worker 服务节点...', err);
+            const data = await doFetch(FALLBACK_API);
+            activeApiBase = FALLBACK_API;
+            return data;
+          } catch (fallbackErr) {
+            showToast(fallbackErr.message || err.message, 'error');
+            throw fallbackErr;
+          }
+        }
         showToast(err.message, 'error');
         throw err;
       }
@@ -168,7 +193,7 @@ createApp({
         settings.value = res.settings;
         user.value = res.user;
         userVote.value = res.userVote;
-        mobileUrl.value = res.mobileUrl || window.location.href;
+        mobileUrl.value = window.location.href.split('?')[0].split('#')[0];
         
         // 如果用户之前已投票，默认带出其历史选票
         if (userVote.value && userVote.value.topicIds) {
