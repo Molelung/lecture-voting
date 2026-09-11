@@ -676,14 +676,20 @@ body {
 .amie-accordion-body {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 0.35s var(--ease-spring);
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transition: grid-template-rows 0.32s var(--ease-spring), opacity 0.2s ease, visibility 0.32s;
 }
 
 .amie-accordion-body.is-open {
   grid-template-rows: 1fr;
+  visibility: visible;
+  opacity: 1;
 }
 
 .amie-accordion-inner {
+  min-height: 0;
   overflow: hidden;
 }
 
