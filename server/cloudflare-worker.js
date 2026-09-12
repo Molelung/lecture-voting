@@ -465,7 +465,7 @@ export default {
             topicId: primaryTopicId,
             topicTitle: topicMap[primaryTopicId] || '',
             voterId: clientToken,
-            authorName: '朋辈学友',
+            authorName: '同学',
             text: cleanComment,
             createdAt: new Date().toISOString()
           };
@@ -493,7 +493,7 @@ export default {
             topicId: c.topicId || 'general',
             topicTitle: c.topicTitle || '',
             text: c.text,
-            authorName: c.authorName || '朋辈学友',
+            authorName: c.authorName || '同学',
             createdAt: c.createdAt
           }));
           const dur = Date.now() - startTime;
@@ -510,7 +510,7 @@ export default {
           if (!cleanText) {
             return jsonResponse({ error: '留言内容不能为空' }, 400);
           }
-          const cleanAuthor = sanitizeText(body.authorName, 20) || '朋辈学友';
+          const cleanAuthor = sanitizeText(body.authorName, 20) || '同学';
           const topicId = body.topicId || 'general';
           let topicTitle = '';
           if (topicId !== 'general') {
@@ -565,7 +565,7 @@ export default {
             .map(c => ({
               id: c.id,
               text: c.text,
-              authorName: c.authorName || '朋辈学友',
+              authorName: c.authorName || '同学',
               createdAt: c.createdAt
             }));
           return jsonResponse({ success: true, comments: topicComments });
@@ -581,7 +581,7 @@ export default {
           if (!cleanText) {
             return jsonResponse({ error: '留言内容不能为空' }, 400);
           }
-          const cleanAuthor = sanitizeText(body.authorName, 20) || '朋辈学友';
+          const cleanAuthor = sanitizeText(body.authorName, 20) || '同学';
 
           const topics = await getJsonKV(KV, 'topics', []);
           const foundTopic = topics.find(t => t.id === topicId);

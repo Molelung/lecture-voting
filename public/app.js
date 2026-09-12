@@ -339,7 +339,7 @@ createApp({
           method: 'POST',
           body: JSON.stringify({
             text,
-            authorName: (newPublicComment.value.authorName || '').trim() || '朋辈学友',
+            authorName: (newPublicComment.value.authorName || '').trim() || '同学',
             topicId: newPublicComment.value.topicId || 'general'
           })
         });
@@ -390,13 +390,33 @@ createApp({
       return 'amie-pill-neutral';
     };
 
-    // 动态分类清单
+    // 标题主副拆解（解决标题过长视觉混乱问题）
+    const getTopicMainTitle = (title) => {
+      if (!title) return '';
+      if (title.includes('：')) return title.split('：')[0].trim();
+      if (title.includes(': ')) return title.split(': ')[0].trim();
+      return title;
+    };
+
+    const getTopicSubTitle = (title) => {
+      if (!title) return '';
+      if (title.includes('：')) return title.split('：').slice(1).join('：').trim();
+      if (title.includes(': ')) return title.split(': ').slice(1).join(': ').trim();
+      return '';
+    };
+
+    // 动态分类清单（包含统计数量）
     const categories = computed(() => {
-      const set = new Set();
+      const counts = {};
       topics.value.forEach(t => {
-        if (t.category) set.add(t.category);
+        const cat = t.category || '通识';
+        counts[cat] = (counts[cat] || 0) + 1;
       });
-      return ['全部', ...Array.from(set)];
+      const list = [{ name: '全部', count: topics.value.length }];
+      Object.keys(counts).forEach(cat => {
+        list.push({ name: cat, count: counts[cat] });
+      });
+      return list;
     });
 
     // 过滤后的社课
@@ -900,7 +920,9 @@ createApp({
       clearVotes,
       exportCsv,
       loadResults,
-      triggerHaptic
+      triggerHaptic,
+      getTopicMainTitle,
+      getTopicSubTitle
     };
   }
 }).mount('#app');

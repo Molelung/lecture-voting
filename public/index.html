@@ -95,104 +95,86 @@
 
     <!-- 主体内容 -->
     <main class="max-w-4xl w-full mx-auto px-4 sm:px-6 pt-4 sm:pt-8 flex-1">
-      <!-- 智性人文刊物风 Hero (Editorial Title Block) -->
-      <section class="mb-5 sm:mb-8 text-center max-w-xl mx-auto">
-        <div class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#f0efe9] text-[#5a5853] text-xs font-medium mb-2.5">
-          <span class="text-[9px] text-[#787774]">●</span>
-          <span>朋辈研学 · 春季社课票选</span>
-        </div>
-        <h2 class="font-serif text-xl sm:text-2xl md:text-3xl font-bold text-[#2f3437] tracking-tight leading-tight mb-2">
+      <!-- 极简通透 Hero -->
+      <section class="mb-5 sm:mb-7 text-center max-w-xl mx-auto">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-[#2f3437] tracking-tight mb-2.5">
           {{ settings.title || '朋辈社课大投票！' }}
         </h2>
-        <p class="text-xs sm:text-sm text-[#787774] leading-relaxed max-w-md mx-auto mb-3">
-          {{ settings.subtitle || '选出你最期待开讲的议题，投票完成后揭晓全站热度排行（限选 1~3 项）' }}
-        </p>
 
-        <!-- 极简选票指示槽与参与统计 -->
-        <div class="flex items-center justify-center gap-2.5 flex-wrap">
+        <!-- 极简选票与参与统计指示条 -->
+        <div class="flex items-center justify-center gap-2 flex-wrap text-xs text-[#787774]">
           <div class="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-[#e9e9e7] shadow-2xs">
-            <span class="text-[11px] text-[#787774]">选票槽:</span>
-            <div class="flex items-center gap-1">
-              <div 
-                v-for="slotIdx in (settings.maxVotesPerUser || 3)" 
-                :key="slotIdx"
-                :class="slotIdx <= selectedTopicIds.length ? 'bg-[#2f3437] border-[#2f3437]' : 'bg-[#f0efe9] border-[#d3d1cb]'"
-                class="w-2.5 h-2.5 rounded-full border transition-all duration-200">
-              </div>
-            </div>
-            <span class="text-[11px] font-semibold text-[#2f3437]">
-              {{ selectedTopicIds.length }} / {{ settings.maxVotesPerUser || 3 }} 票
-            </span>
+            <span class="inline-block w-2 h-2 rounded-full" :class="selectedTopicIds.length > 0 ? 'bg-emerald-500' : 'bg-[#d3d1cb]'"></span>
+            <span>已选 <strong class="text-[#2f3437]">{{ selectedTopicIds.length }}</strong> / {{ settings.maxVotesPerUser || 3 }} 票</span>
           </div>
 
-          <div class="text-[11px] text-[#787774] bg-white px-3 py-1 rounded-full border border-[#e9e9e7] shadow-2xs">
-            <span>{{ stats.totalVoters || statsSummary.totalVoters || 0 }} 位学友参与 · {{ stats.totalVotesCast || statsSummary.totalVotesCast || 0 }} 票已投递</span>
+          <div class="bg-white px-3 py-1 rounded-full border border-[#e9e9e7] shadow-2xs">
+            <span>{{ stats.totalVoters || statsSummary.totalVoters || 0 }} 位同学参与 · 共 {{ stats.totalVotesCast || statsSummary.totalVotesCast || 0 }} 票</span>
           </div>
         </div>
       </section>
 
-      <!-- 视图分段控制器 (候选议题 / 实时热度榜) -->
-      <div class="flex items-center justify-between gap-3 mb-4 sm:mb-5">
-        <div class="notion-segmented relative p-0.5 rounded-lg border border-[#e9e9e7] bg-[#f0efe9] w-60 flex items-center select-none mx-auto sm:mx-0">
+      <!-- 视图分段控制器 (社课列表 / 实时热度榜) 与 搜索栏 -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
+        <!-- 标签切换 -->
+        <div class="notion-segmented relative p-0.5 rounded-xl border border-[#e9e9e7] bg-[#f0efe9] w-full sm:w-60 flex items-center select-none shadow-2xs">
           <button 
             @click="activeTab = 'vote'; triggerHaptic('light')"
             :class="activeTab === 'vote' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
-            class="w-1/2 py-1 rounded-md text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1">
-            <span>候选议题 ({{ topics.length }})</span>
+            class="w-1/2 py-1.5 rounded-lg text-xs transition-all duration-200 flex items-center justify-center gap-1.5">
+            <span>社课列表</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded-full" :class="activeTab === 'vote' ? 'bg-[#2f3437] text-white' : 'bg-[#e0ded8] text-[#787774]'">{{ topics.length }}</span>
           </button>
           <button 
             @click="activeTab = 'results'; loadResults(); triggerHaptic('light')"
             :class="activeTab === 'results' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
-            class="w-1/2 py-1 rounded-md text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1">
+            class="w-1/2 py-1.5 rounded-lg text-xs transition-all duration-200 flex items-center justify-center gap-1.5">
             <span>实时热度榜</span>
             <svg v-if="!canSeeResults" class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
           </button>
         </div>
 
-        <!-- 极简微型搜索图标（按需展开） -->
-        <div class="hidden sm:flex items-center">
+        <!-- 搜索输入框 -->
+        <div class="relative flex items-center w-full sm:w-56">
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            placeholder="搜索社课或讲师..." 
+            class="w-full bg-white border border-[#e9e9e7] hover:border-[#d3d1cb] rounded-xl pl-8 pr-7 py-1.5 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] shadow-2xs transition">
+          <svg class="w-3.5 h-3.5 text-[#9b9a97] absolute left-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
           <button 
-            v-if="!showSearchInput"
-            @click="showSearchInput = true" 
-            class="w-7 h-7 rounded-md bg-white border border-[#e9e9e7] hover:bg-[#f7f6f3] text-[#787774] flex items-center justify-center transition"
-            title="搜索社课">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            v-if="searchQuery"
+            @click="searchQuery = ''" 
+            class="w-4 h-4 rounded-full bg-[#e9e9e7] text-[#787774] hover:bg-[#d3d1cb] absolute right-2 flex items-center justify-center text-[10px]">
+            ✕
           </button>
-          <div v-else class="relative flex items-center">
-            <input 
-              v-model="searchQuery" 
-              type="text" 
-              placeholder="搜索议题 / 讲师..." 
-              class="w-48 bg-white border border-[#d3d1cb] rounded-md pl-7 pr-6 py-1 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] transition">
-            <svg class="w-3.5 h-3.5 text-[#787774] absolute left-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            <button 
-              @click="searchQuery = ''; showSearchInput = false" 
-              class="w-4 h-4 rounded-full bg-[#e9e9e7] text-[#787774] hover:bg-[#d3d1cb] absolute right-1.5 flex items-center justify-center text-[10px]">
-              ✕
-            </button>
-          </div>
         </div>
       </div>
 
-      <!-- 单行呼吸感横滑分类胶囊 -->
-      <div v-if="activeTab === 'vote'" class="mb-3 sm:mb-4">
+      <!-- 高品质分类筛选胶囊栏 (带数量徽标) -->
+      <div v-if="activeTab === 'vote'" class="mb-4">
         <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar px-0.5">
           <button 
             v-for="cat in categories" 
-            :key="cat"
-            @click="activeCategory = cat; triggerHaptic('light')"
-            :class="activeCategory === cat ? 'bg-[#2f3437] text-white font-medium' : 'bg-white text-[#787774] hover:text-[#2f3437] border border-[#e9e9e7]'"
-            class="text-xs py-1 px-3 rounded-md transition whitespace-nowrap">
-            {{ cat }}
+            :key="cat.name"
+            @click="activeCategory = cat.name; triggerHaptic('light')"
+            :class="activeCategory === cat.name ? 'bg-[#2f3437] text-white font-medium shadow-2xs' : 'bg-white text-[#5a5853] hover:text-[#2f3437] hover:bg-[#f7f6f3] border border-[#e9e9e7]'"
+            class="text-xs py-1.5 px-3 rounded-lg transition-all duration-150 whitespace-nowrap flex items-center gap-1.5">
+            <span>{{ cat.name }}</span>
+            <span 
+              :class="activeCategory === cat.name ? 'bg-white/20 text-white' : 'bg-[#f0efe9] text-[#787774]'"
+              class="text-[10px] px-1.5 py-0.2 rounded-full font-mono">
+              {{ cat.count }}
+            </span>
           </button>
         </div>
       </div>
 
-      <!-- ================= 视图 1：紧凑折叠式社课卡片列表（方案 B: 极致骨架收拢） ================= -->
+      <!-- ================= 视图 1：紧凑折叠式社课卡片列表 ================= -->
       <div v-if="activeTab === 'vote'">
         <!-- 搜索无结果 -->
         <div v-if="filteredTopics.length === 0" class="bg-white rounded-xl p-8 text-center text-[#787774] border border-[#e9e9e7]">
-          <p class="text-sm font-semibold text-[#2f3437]">未找到符合条件的社课议题</p>
+          <p class="text-sm font-semibold text-[#2f3437]">未找到符合条件的社课</p>
           <button @click="clearSearch" class="mt-3 text-xs py-1 px-3 rounded border border-[#e9e9e7] hover:bg-[#f7f6f3]">
             重置分类与搜索
           </button>
@@ -208,27 +190,23 @@
               selectedTopicIds.includes(topic.id) ? 'is-selected' : ''
             ]">
             
-            <!-- 卡片收起态核心骨架（方案 B：仅保留标题、元数据、状态与勾选） -->
+            <!-- 卡片收起态核心骨架 -->
             <div 
               @click="toggleTopic(topic.id)"
               class="p-4 cursor-pointer select-none">
               
               <!-- 顶部行：分类微标 + 主讲信息 + 极简复选圈 -->
-              <div class="flex items-center justify-between gap-2 mb-2">
+              <div class="flex items-center justify-between gap-2 mb-2.5">
                 <div class="flex items-center gap-2 min-w-0">
                   <span class="text-[11px] font-medium text-[#5a5853] bg-[#f0efe9] px-2 py-0.5 rounded shrink-0">
                     {{ topic.category }}
                   </span>
-                  <span v-if="topic.tag" class="text-[11px] text-[#787774] font-normal truncate">
-                    {{ topic.tag }}
-                  </span>
-                  <span class="text-[#d3d1cb] text-[10px]">·</span>
                   <span class="text-[11px] text-[#787774] truncate">{{ topic.speaker }}</span>
                 </div>
 
                 <!-- 极简复选勾选圈 -->
                 <div 
-                  :class="selectedTopicIds.includes(topic.id) ? 'bg-[#2f3437] border-[#2f3437]' : 'bg-white border-[#d3d1cb]'"
+                  :class="selectedTopicIds.includes(topic.id) ? 'bg-[#2f3437] border-[#2f3437]' : 'bg-white border-[#d3d1cb] hover:border-[#787774]'"
                   class="w-4 h-4 rounded-full border transition-colors flex items-center justify-center shrink-0">
                   <svg v-if="selectedTopicIds.includes(topic.id)" class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
@@ -236,21 +214,31 @@
                 </div>
               </div>
 
-              <!-- 社课主标题 (优雅衬线字体) -->
-              <h3 class="font-serif text-base sm:text-[17px] font-semibold text-[#2f3437] tracking-tight leading-snug mb-2.5 hover:text-blue-700 transition-colors">
-                {{ topic.title }}
-              </h3>
+              <!-- 社课主标题与副标题结构化呈现 (告别混乱大段字) -->
+              <div class="mb-2">
+                <h3 class="text-[15px] sm:text-base font-bold text-[#2f3437] tracking-tight leading-snug">
+                  {{ getTopicMainTitle(topic.title) }}
+                </h3>
+                <span v-if="getTopicSubTitle(topic.title)" class="block text-xs font-normal text-[#787774] mt-0.5 leading-normal">
+                  {{ getTopicSubTitle(topic.title) }}
+                </span>
+              </div>
 
-              <!-- 底栏状态行：票数状态（投前保密） + 手风琴展开按钮 -->
+              <!-- 思考抓手一句话摘要 (微缩预览) -->
+              <p v-if="topic.hook" class="text-xs text-[#787774] line-clamp-1 mb-2.5 leading-relaxed italic">
+                “{{ topic.hook }}”
+              </p>
+
+              <!-- 底栏状态行：票数状态 + 手风琴展开按钮 -->
               <div class="flex items-center justify-between pt-2 border-t border-[#f0efe9] text-xs">
                 <!-- 票数状态 -->
                 <div class="flex items-center gap-1.5">
-                  <span v-if="topic.stats.locked" class="inline-flex items-center gap-1 text-[11px] text-[#787774] bg-[#f7f6f3] px-2 py-0.5 rounded border border-[#e9e9e7]">
-                    <svg class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-                    <span>投后公开票数</span>
+                  <span v-if="topic.stats.locked" class="inline-flex items-center gap-1 text-[11px] text-[#9b9a97]">
+                    <svg class="w-3 h-3 text-[#9b9a97]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    <span>投后解锁票数</span>
                   </span>
                   <span v-else class="text-xs font-medium text-[#2f3437] flex items-center gap-1.5">
-                    <span class="font-serif font-bold text-sm">{{ topic.stats.count }} 票</span>
+                    <span class="font-bold text-sm font-serif">{{ topic.stats.count }} 票</span>
                     <span class="text-[#787774] text-[11px]">({{ topic.stats.percentage }}%)</span>
                   </span>
                 </div>
@@ -259,7 +247,7 @@
                 <button 
                   @click.stop="toggleExpand(topic.id)"
                   class="text-xs text-[#787774] hover:text-[#2f3437] font-medium flex items-center gap-1 py-0.5 px-2 rounded hover:bg-[#f0efe9] transition">
-                  <span>{{ expandedTopicIds.includes(topic.id) ? '收起大纲' : '大纲与研讨 (' + (topic.commentCount || (topicComments[topic.id] || []).length) + ')' }}</span>
+                  <span>{{ expandedTopicIds.includes(topic.id) ? '收起大纲' : '查看大纲' }}</span>
                   <svg 
                     class="w-3 h-3 transition-transform duration-200" 
                     :class="expandedTopicIds.includes(topic.id) ? 'rotate-180' : ''"
@@ -276,15 +264,10 @@
               :class="expandedTopicIds.includes(topic.id) ? 'is-open' : ''">
               <div class="amie-accordion-inner px-4 pb-4 pt-2 border-t border-[#e9e9e7] bg-[#fbfbfa]">
                 
-                <!-- 1. 痛点共鸣设问 (The Hook / 思考锚点) -->
-                <div v-if="topic.hook" class="mb-3.5 p-3 rounded-lg bg-[#f7f6f3] border-l-2 border-[#2f3437] text-xs leading-relaxed text-[#2f3437]">
-                  <p class="font-serif italic font-medium leading-relaxed">“{{ topic.hook }}”</p>
-                </div>
-
-                <!-- 2. 结构化研讨大纲 (两段式重点导向) -->
-                <div class="mb-3.5 bg-white p-3 rounded-xl border border-[#e9e9e7]">
+                <!-- 1. 结构化社课大纲 -->
+                <div class="mb-3 bg-white p-3 rounded-xl border border-[#e9e9e7]">
                   <div class="flex items-center justify-between mb-2 pb-1.5 border-b border-[#f0efe9]">
-                    <span class="text-[11px] font-semibold text-[#787774] uppercase tracking-wider">研讨大纲与核心交付</span>
+                    <span class="text-[11px] font-semibold text-[#787774]">社课大纲与核心要点</span>
                     <span class="text-[10px] text-[#9b9a97]">{{ topic.duration }}</span>
                   </div>
                   <div class="space-y-2">
@@ -307,11 +290,11 @@
                   </div>
                 </div>
 
-                <!-- 3. 学友期待与提问 (Substack 风格读者讨论流) -->
-                <div class="mt-3">
+                <!-- 2. 同学讨论与提问交流 -->
+                <div class="mt-2.5">
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-[11px] font-semibold text-[#787774]">
-                      学友期待与提问 ({{ (topicComments[topic.id] || []).length }})
+                      同学期待与提问 ({{ (topicComments[topic.id] || []).length }})
                     </span>
                   </div>
 
@@ -322,10 +305,10 @@
                       :key="c.id" 
                       class="p-2 bg-white rounded-lg border border-[#e9e9e7] text-xs">
                       <p class="text-[#2f3437] leading-snug">{{ c.text }}</p>
-                      <span class="text-[10px] text-[#9b9a97] mt-1 block text-right">{{ c.authorName || '朋辈学友' }} · {{ formatTime(c.createdAt) }}</span>
+                      <span class="text-[10px] text-[#9b9a97] mt-1 block text-right">{{ c.authorName || '同学' }} · {{ formatTime(c.createdAt) }}</span>
                     </div>
                     <div v-if="!topicComments[topic.id] || topicComments[topic.id].length === 0" class="text-center py-2 text-[11px] text-[#9b9a97]">
-                      暂无提问，投出选票时写下你想听的实际场景吧
+                      暂无留言，欢迎写下你想探讨的具体内容
                     </div>
                   </div>
 
@@ -335,7 +318,7 @@
                       v-model="newCommentTexts[topic.id]"
                       @keyup.enter="submitQuickComment(topic.id)"
                       type="text" 
-                      placeholder="提出你最关心的困惑或想听的场景..." 
+                      placeholder="写下你想听的场景或建议..." 
                       class="flex-1 bg-white border border-[#e9e9e7] rounded-lg px-2.5 py-1 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437]">
                     <button 
                       @click="submitQuickComment(topic.id)"
@@ -420,19 +403,19 @@
         </div>
       </div>
 
-      <!-- ================= 学友留言与期待 (公共交流讨论区 · 无论是否投票均可自由交流) ================= -->
-      <section class="mt-14 pt-8 border-t border-[#e9e9e7]">
+      <!-- ================= 同学留言与期待 (公共交流讨论区) ================= -->
+      <section class="mt-12 pt-8 border-t border-[#e9e9e7]">
         <!-- 区域标头 -->
         <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 mb-5">
           <div>
             <div class="flex items-center gap-2 mb-1">
-              <h3 class="font-serif text-base sm:text-lg font-bold text-[#2f3437] tracking-tight">学友留言与交流</h3>
+              <h3 class="text-base sm:text-lg font-bold text-[#2f3437] tracking-tight">同学留言交流</h3>
               <span class="text-[11px] font-mono text-[#787774] bg-[#f0efe9] px-2 py-0.5 rounded-full">
-                {{ publicComments.length }} 条探讨
+                {{ publicComments.length }} 条留言
               </span>
             </div>
             <p class="text-xs text-[#787774]">
-              无论是否已投票均可自由交流 · 畅谈对社课选题的想法、期待开讲的具体内容或给主讲人的建议
+              畅谈对社课选题的想法、想听的具体案例或给主讲人的建议
             </p>
           </div>
 
@@ -441,16 +424,16 @@
             <select 
               v-model="commentFilterTopicId"
               class="bg-white border border-[#e9e9e7] rounded-lg px-2.5 py-1 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437] transition">
-              <option value="all">全部留言流 ({{ publicComments.length }})</option>
-              <option value="general">公共留言 / 通用期待</option>
+              <option value="all">全部留言 ({{ publicComments.length }})</option>
+              <option value="general">公共交流 / 通用建议</option>
               <option v-for="t in topics" :key="t.id" :value="t.id">
-                {{ t.title.length > 14 ? t.title.slice(0, 14) + '...' : t.title }}
+                {{ getTopicMainTitle(t.title) }}
               </option>
             </select>
           </div>
         </div>
 
-        <!-- 留言发表卡片 (Notion 智性白底设计) -->
+        <!-- 留言发表卡片 -->
         <div class="bg-white border border-[#e9e9e7] rounded-xl p-4 sm:p-5 shadow-2xs mb-6 transition focus-within:border-[#2f3437]">
           <!-- 顶层配置：称呼与关联社课 -->
           <div class="flex flex-wrap items-center gap-3 mb-3">
@@ -460,7 +443,7 @@
                 v-model="newPublicComment.authorName"
                 type="text" 
                 maxlength="15"
-                placeholder="朋辈学友（选填）"
+                placeholder="同学（选填）"
                 class="w-32 bg-[#fbfbfa] border border-[#e9e9e7] rounded-md px-2.5 py-1 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437]">
             </div>
             <div class="flex items-center gap-1.5">
@@ -468,9 +451,9 @@
               <select 
                 v-model="newPublicComment.topicId"
                 class="max-w-[200px] sm:max-w-xs bg-[#fbfbfa] border border-[#e9e9e7] rounded-md px-2.5 py-1 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437]">
-                <option value="general">公共留言 / 通用期待</option>
+                <option value="general">公共交流 / 通用建议</option>
                 <option v-for="t in topics" :key="t.id" :value="t.id">
-                  {{ t.title.length > 16 ? t.title.slice(0, 16) + '...' : t.title }}
+                  {{ getTopicMainTitle(t.title) }}
                 </option>
               </select>
             </div>
@@ -481,7 +464,7 @@
             v-model="newPublicComment.text"
             rows="3"
             maxlength="200"
-            placeholder="写下你最感兴趣的具体方向、想听的实际案例，或是对社课开展形式的建议..."
+            placeholder="写下你想听的议题方向、真实困惑或给主讲人的建议..."
             class="w-full bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg p-3 text-xs sm:text-sm text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] transition resize-none"></textarea>
 
           <!-- 底部控制栏：字数与提交 -->
@@ -510,10 +493,10 @@
             <div class="flex items-center justify-between gap-2 mb-2">
               <div class="flex items-center gap-2 flex-wrap">
                 <!-- 极简字头图标 -->
-                <div class="w-5 h-5 rounded-full bg-[#f0efe9] text-[#787774] flex items-center justify-center text-[10px] font-serif font-bold uppercase shrink-0">
-                  {{ (c.authorName || '学').slice(0, 1) }}
+                <div class="w-5 h-5 rounded-full bg-[#f0efe9] text-[#787774] flex items-center justify-center text-[10px] font-bold uppercase shrink-0">
+                  {{ (c.authorName || '同').slice(0, 1) }}
                 </div>
-                <span class="text-xs font-semibold text-[#2f3437]">{{ c.authorName || '朋辈学友' }}</span>
+                <span class="text-xs font-semibold text-[#2f3437]">{{ c.authorName || '同学' }}</span>
                 <!-- 关联主题标签 -->
                 <span 
                   v-if="c.topicId && c.topicId !== 'general'"
@@ -523,7 +506,7 @@
                 <span 
                   v-else
                   class="text-[10px] font-medium bg-[#f0efe9] text-[#9b9a97] px-1.5 py-0.5 rounded">
-                  公共留言
+                  公共交流
                 </span>
               </div>
 
@@ -590,7 +573,7 @@
         <div class="modal-sheet-handle"></div>
         <div class="mb-3">
           <h3 class="font-serif text-base font-bold text-[#2f3437] mb-1">确认投出选票</h3>
-          <p class="text-xs text-[#787774]">无需学号密码 · 校园网络直连 · 投出后解锁热度榜</p>
+          <p class="text-xs text-[#787774]">每人限投 {{ settings.maxVotesPerUser || 3 }} 票，投出后可随时查看实时排名</p>
         </div>
 
         <!-- 已选卡片胶囊摘要 -->
@@ -861,7 +844,7 @@
             <div v-for="c in publicComments" :key="c.id" class="p-2.5 bg-[#fbfbfa] rounded-lg border border-[#e9e9e7] space-y-1 text-xs">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5 font-medium text-[#2f3437] text-[11px]">
-                  <span>{{ c.authorName || '朋辈学友' }}</span>
+                  <span>{{ c.authorName || '同学' }}</span>
                   <span class="text-[10px] bg-[#f0efe9] text-[#787774] px-1 rounded">{{ c.topicTitle || '公共综合' }}</span>
                 </div>
                 <button 
