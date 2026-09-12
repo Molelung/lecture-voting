@@ -46,55 +46,57 @@
     <div v-if="loading" class="top-loading-line"></div>
 
     <!-- 顶部极简学术导航条 (Notion Header) -->
-    <header class="sticky top-0 z-40 bg-[#fbfbfa]/90 backdrop-blur-md px-4 sm:px-8 py-3 flex items-center justify-between gap-3 border-b border-[#e9e9e7]">
-      <div class="flex items-center gap-2.5 min-w-0">
-        <!-- 智性书本图标 (Minimalist Book Icon) -->
-        <div class="w-7 h-7 rounded-md bg-[#2f3437] text-white flex items-center justify-center shrink-0 shadow-2xs">
-          <svg class="w-4 h-4 text-white" viewBox="0 0 32 32" fill="none">
-            <path d="M4 7C4 5.89543 4.89543 5 6 5H13.6C14.73 5 15.7 5.72 16 6.78C16.3 5.72 17.27 5 18.4 5H26C27.1046 5 28 5.89543 28 7V23C28 24.1046 27.1046 25 26 25H18.4C17.0745 25 16 26.0745 16 27.4C16 26.0745 14.9255 25 13.6 25H6C4.89543 25 4 24.1046 4 23V7Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M16 7V26" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-            <path d="M8 10H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M8 14H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M8 18H11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M20 10H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M20 14H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M21 18H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+    <header class="sticky top-0 z-40 bg-[#fbfbfa]/90 backdrop-blur-md border-b border-[#e9e9e7]">
+      <div class="max-w-4xl w-full mx-auto px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <!-- 智性书本图标 (Minimalist Book Icon) -->
+          <div class="w-7 h-7 rounded-md bg-[#2f3437] text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <svg class="w-4 h-4 text-white" viewBox="0 0 32 32" fill="none">
+              <path d="M4 7C4 5.89543 4.89543 5 6 5H13.6C14.73 5 15.7 5.72 16 6.78C16.3 5.72 17.27 5 18.4 5H26C27.1046 5 28 5.89543 28 7V23C28 24.1046 27.1046 25 26 25H18.4C17.0745 25 16 26.0745 16 27.4C16 26.0745 14.9255 25 13.6 25H6C4.89543 25 4 24.1046 4 23V7Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M16 7V26" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M8 10H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M8 14H12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M8 18H11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M20 10H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M20 14H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M21 18H24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="flex items-center gap-2 min-w-0">
+            <div v-if="loading" class="h-5 w-28 skeleton-shimmer"></div>
+            <span v-else class="font-serif font-semibold text-[#2f3437] text-sm sm:text-base tracking-tight truncate">{{ settings.title || '朋辈社课大投票！' }}</span>
+            <span v-if="!loading && settings.status === 'open'" class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded shrink-0">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+              <span>征集中</span>
+            </span>
+            <span v-else-if="!loading && settings.status === 'paused'" class="text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded shrink-0">
+              暂缓
+            </span>
+            <span v-else-if="!loading" class="text-[11px] font-medium text-[#787774] bg-[#f0efe9] px-2 py-0.5 rounded shrink-0">
+              已截止
+            </span>
+          </div>
         </div>
-        <div class="flex items-center gap-2 min-w-0">
-          <div v-if="loading" class="h-5 w-28 skeleton-shimmer"></div>
-          <span v-else class="font-serif font-semibold text-[#2f3437] text-sm sm:text-base tracking-tight truncate">{{ settings.title || '朋辈社课大投票！' }}</span>
-          <span v-if="!loading && settings.status === 'open'" class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded shrink-0">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-            <span>征集中</span>
-          </span>
-          <span v-else-if="!loading && settings.status === 'paused'" class="text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded shrink-0">
-            暂缓
-          </span>
-          <span v-else-if="!loading" class="text-[11px] font-medium text-[#787774] bg-[#f0efe9] px-2 py-0.5 rounded shrink-0">
-            已截止
-          </span>
+
+        <!-- 右侧轻量功能按钮 -->
+        <div class="flex items-center gap-2 shrink-0">
+          <button 
+            @click="handleSmartShare" 
+            class="notion-action-btn text-xs py-1 px-2.5 rounded-lg flex items-center gap-1.5 text-[#787774] hover:text-[#2f3437]"
+            title="分享二维码或链接">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+            <span class="hidden xs:inline">分享</span>
+          </button>
+
+          <button 
+            @click="openAdminModal" 
+            class="notion-action-btn text-xs py-1 px-2.5 rounded-lg flex items-center gap-1"
+            :class="isAdmin ? 'text-blue-700 font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
+            title="管理员后台">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <span class="hidden xs:inline">{{ isAdmin ? '管理中' : '管理' }}</span>
+          </button>
         </div>
-      </div>
-
-      <!-- 右侧轻量功能按钮 -->
-      <div class="flex items-center gap-2 shrink-0">
-        <button 
-          @click="handleSmartShare" 
-          class="notion-action-btn text-xs py-1 px-2.5 rounded flex items-center gap-1.5 text-[#787774] hover:text-[#2f3437]"
-          title="分享二维码或链接">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-          <span class="hidden xs:inline">分享</span>
-        </button>
-
-        <button 
-          @click="openAdminModal" 
-          class="notion-action-btn text-xs py-1 px-2 rounded flex items-center gap-1"
-          :class="isAdmin ? 'text-blue-700 font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
-          title="管理员后台">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-          <span class="hidden xs:inline">{{ isAdmin ? '管理中' : '管理' }}</span>
-        </button>
       </div>
     </header>
 
@@ -134,35 +136,35 @@
       <!-- 桌面端控制栏：分段视图切换 + 搜索框 -->
       <div class="hidden sm:flex items-center justify-between gap-3 mb-4">
         <!-- 标签切换 -->
-        <div class="notion-segmented relative p-0.5 rounded-xl border border-[#e9e9e7] bg-[#f0efe9] w-60 flex items-center select-none shadow-2xs">
+        <div class="notion-segmented relative p-0.5 rounded-xl border border-[#e9e9e7] bg-[#f0efe9] w-64 h-9 flex items-center select-none shadow-2xs">
           <button 
             @click="activeTab = 'vote'; triggerHaptic('light')"
             :class="activeTab === 'vote' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
-            class="w-1/2 py-1.5 rounded-lg text-xs transition-all duration-200 flex items-center justify-center gap-1.5">
+            class="w-1/2 h-full rounded-lg text-xs transition-all duration-200 flex items-center justify-center gap-1.5">
             <span>社课列表</span>
             <span class="text-[10px] px-1.5 py-0.2 rounded-full" :class="activeTab === 'vote' ? 'bg-[#2f3437] text-white' : 'bg-[#e0ded8] text-[#787774]'">{{ topics.length }}</span>
           </button>
           <button 
             @click="activeTab = 'results'; loadResults(); triggerHaptic('light')"
             :class="activeTab === 'results' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
-            class="w-1/2 py-1.5 rounded-lg text-xs transition-all duration-200 flex items-center justify-center gap-1.5">
+            class="w-1/2 h-full rounded-lg text-xs transition-all duration-200 flex items-center justify-center gap-1.5">
             <span>实时热度榜</span>
             <svg v-if="!canSeeResults" class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
           </button>
         </div>
 
         <!-- 搜索输入框 -->
-        <div class="relative flex items-center w-56">
+        <div class="relative flex items-center w-60 h-9">
           <input 
             v-model="searchQuery" 
             type="text" 
             placeholder="搜索社课或讲师..." 
-            class="w-full bg-white border border-[#e9e9e7] hover:border-[#d3d1cb] rounded-xl pl-8 pr-7 py-1.5 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] shadow-2xs transition">
+            class="w-full h-full bg-white border border-[#e9e9e7] hover:border-[#d3d1cb] rounded-xl pl-8 pr-7 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] shadow-2xs transition">
           <svg class="w-3.5 h-3.5 text-[#9b9a97] absolute left-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
           <button 
             v-if="searchQuery"
             @click="searchQuery = ''" 
-            class="w-4 h-4 rounded-full bg-[#e9e9e7] text-[#787774] hover:bg-[#d3d1cb] absolute right-2 flex items-center justify-center text-[10px]">
+            class="w-4 h-4 rounded-full bg-[#e9e9e7] text-[#787774] hover:bg-[#d3d1cb] absolute right-2.5 flex items-center justify-center text-[10px]">
             ✕
           </button>
         </div>
@@ -172,18 +174,18 @@
       <div class="sm:hidden mb-2.5">
         <div class="flex items-center gap-2">
           <!-- 紧凑分段切换 -->
-          <div class="notion-segmented flex-1 relative p-0.5 rounded-xl border border-[#e9e9e7] bg-[#f0efe9] flex items-center select-none shadow-2xs">
+          <div class="notion-segmented flex-1 h-9 relative p-0.5 rounded-xl border border-[#e9e9e7] bg-[#f0efe9] flex items-center select-none shadow-2xs">
             <button 
               @click="activeTab = 'vote'; triggerHaptic('light')"
               :class="activeTab === 'vote' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774]'"
-              class="flex-1 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1">
+              class="flex-1 h-full rounded-lg text-xs transition-all flex items-center justify-center gap-1">
               <span>社课列表</span>
               <span class="text-[10px] px-1.5 py-0.2 rounded-full" :class="activeTab === 'vote' ? 'bg-[#2f3437] text-white' : 'bg-[#e0ded8] text-[#787774]'">{{ topics.length }}</span>
             </button>
             <button 
               @click="activeTab = 'results'; loadResults(); triggerHaptic('light')"
               :class="activeTab === 'results' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774]'"
-              class="flex-1 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1">
+              class="flex-1 h-full rounded-lg text-xs transition-all flex items-center justify-center gap-1">
               <span>实时热度榜</span>
               <svg v-if="!canSeeResults" class="w-2.5 h-2.5 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
             </button>
@@ -193,32 +195,32 @@
           <button 
             @click="toggleMobileSearch" 
             :class="showMobileSearch || searchQuery ? 'bg-[#2f3437] text-white border-[#2f3437]' : 'bg-white text-[#787774] border-[#e9e9e7]'"
-            class="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 shadow-2xs transition active:scale-95"
+            class="w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 shadow-2xs transition active:scale-95"
             title="搜索社课">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
           </button>
         </div>
 
         <!-- 移动端展开的搜索框 -->
-        <div v-if="showMobileSearch || searchQuery" class="mt-2 relative flex items-center">
+        <div v-if="showMobileSearch || searchQuery" class="mt-2 relative flex items-center h-9">
           <input 
             ref="mobileSearchInputRef"
             v-model="searchQuery" 
             type="text" 
             placeholder="搜索社课关键词或讲师..." 
-            class="w-full bg-white border border-[#2f3437] rounded-xl pl-8 pr-7 py-1.5 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none shadow-xs">
+            class="w-full h-full bg-white border border-[#2f3437] rounded-xl pl-8 pr-7 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none shadow-xs">
           <svg class="w-3.5 h-3.5 text-[#9b9a97] absolute left-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
           <button 
             v-if="searchQuery"
             @click="searchQuery = ''; showMobileSearch = false" 
-            class="w-4 h-4 rounded-full bg-[#e9e9e7] text-[#787774] absolute right-2 flex items-center justify-center text-[10px]">
+            class="w-4 h-4 rounded-full bg-[#e9e9e7] text-[#787774] absolute right-2.5 flex items-center justify-center text-[10px]">
             ✕
           </button>
         </div>
       </div>
 
       <!-- 高品质分类筛选栏 (手机端支持吸顶 + 平滑横滑 + 全部分类抽屉) -->
-      <div v-if="activeTab === 'vote'" class="sticky top-[52px] z-30 bg-[#fbfbfa]/95 backdrop-blur-md -mx-4 px-4 sm:mx-0 sm:px-0 py-2 sm:py-0 border-b border-[#e9e9e7]/80 sm:border-0 mb-3 sm:mb-4 transition-all">
+      <div v-if="activeTab === 'vote'" class="sticky top-[49px] sm:top-[53px] z-30 bg-[#fbfbfa]/95 backdrop-blur-md -mx-4 px-4 sm:mx-0 sm:px-0 py-2 sm:py-0 border-b border-[#e9e9e7]/80 sm:border-0 mb-3 sm:mb-4 transition-all">
         <div class="relative flex items-center">
           
           <!-- 左右平滑滚动分类胶囊条 -->
@@ -230,7 +232,7 @@
               :key="cat.name"
               @click="selectCategory(cat.name, $event)"
               :class="activeCategory === cat.name ? 'bg-[#2f3437] text-white font-medium shadow-2xs' : 'bg-white text-[#5a5853] hover:text-[#2f3437] hover:bg-[#f7f6f3] border border-[#e9e9e7]'"
-              class="text-xs py-1.5 px-3 rounded-lg transition-all duration-150 whitespace-nowrap flex items-center gap-1.5 shrink-0 active:scale-95">
+              class="text-xs h-8 px-3 rounded-lg transition-all duration-150 whitespace-nowrap flex items-center gap-1.5 shrink-0 active:scale-95">
               <span>{{ cat.name }}</span>
               <span 
                 :class="activeCategory === cat.name ? 'bg-white/20 text-white' : 'bg-[#f0efe9] text-[#787774]'"
@@ -246,7 +248,7 @@
           <!-- 手机端全部分类展开抽屉按钮 (Drawer Sheet Trigger) -->
           <button 
             @click="showCategoryDrawer = true; triggerHaptic('light')" 
-            class="sm:hidden shrink-0 ml-1.5 py-1 px-2.5 rounded-lg border border-[#e9e9e7] bg-white text-[#5a5853] hover:text-[#2f3437] flex items-center gap-1 text-xs shadow-2xs active:scale-95 transition"
+            class="sm:hidden shrink-0 ml-1.5 h-8 px-2.5 rounded-lg border border-[#e9e9e7] bg-white text-[#5a5853] hover:text-[#2f3437] flex items-center gap-1 text-xs shadow-2xs active:scale-95 transition"
             title="展开全部分类">
             <svg class="w-3.5 h-3.5 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h7"></path></svg>
             <span class="text-[11px] font-medium">分类</span>
@@ -495,12 +497,13 @@
             </div>
             <button 
               @click="loadResults" 
-              class="notion-action-btn text-xs py-1 px-3 rounded text-[#787774] hover:text-[#2f3437] flex items-center gap-1">
+              class="notion-action-btn text-xs py-1 px-2.5 rounded-lg text-[#787774] hover:text-[#2f3437] flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
               <span>刷新</span>
             </button>
           </div>
 
-          <div class="space-y-2.5">
+          <div v-if="stats.topicStats && stats.topicStats.length > 0" class="space-y-2.5">
             <div 
               v-for="(t, idx) in stats.topicStats" 
               :key="t.id"
@@ -536,13 +539,16 @@
               </div>
             </div>
           </div>
+          <div v-else class="text-center py-10 text-xs text-[#787774]">
+            暂无热度数据，稍后发布课程后将在此呈现实时排名
+          </div>
         </div>
       </div>
 
       <!-- ================= 同学留言与期待 (公共交流讨论区) ================= -->
       <section class="mt-12 pt-8 border-t border-[#e9e9e7]">
         <!-- 区域标头 -->
-        <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 mb-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
           <div>
             <div class="flex items-center gap-2 mb-1">
               <h3 class="text-base sm:text-lg font-bold text-[#2f3437] tracking-tight">同学留言交流</h3>
@@ -556,10 +562,10 @@
           </div>
 
           <!-- 留言筛选器 -->
-          <div class="flex items-center gap-1.5 self-start sm:self-auto">
+          <div class="w-full sm:w-auto flex items-center gap-1.5 shrink-0">
             <select 
               v-model="commentFilterTopicId"
-              class="bg-white border border-[#e9e9e7] rounded-lg px-2.5 py-1 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437] transition">
+              class="w-full sm:w-auto h-8 bg-white border border-[#e9e9e7] rounded-lg px-2.5 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437] transition shadow-2xs">
               <option value="all">全部留言 ({{ publicComments.length }})</option>
               <option value="general">公共交流 / 通用建议</option>
               <option v-for="t in topics" :key="t.id" :value="t.id">
@@ -572,21 +578,21 @@
         <!-- 留言发表卡片 -->
         <div class="bg-white border border-[#e9e9e7] rounded-xl p-4 sm:p-5 shadow-2xs mb-6 transition focus-within:border-[#2f3437]">
           <!-- 顶层配置：称呼与关联社课 -->
-          <div class="flex flex-wrap items-center gap-3 mb-3">
-            <div class="flex items-center gap-1.5">
-              <span class="text-xs font-medium text-[#787774]">称呼：</span>
+          <div class="grid grid-cols-1 sm:flex sm:items-center gap-2.5 sm:gap-3 mb-3">
+            <div class="flex items-center gap-1.5 w-full sm:w-auto">
+              <span class="text-xs font-medium text-[#787774] shrink-0 w-16 sm:w-auto">称呼：</span>
               <input 
                 v-model="newPublicComment.authorName"
                 type="text" 
                 maxlength="15"
                 placeholder="同学（选填）"
-                class="w-32 bg-[#fbfbfa] border border-[#e9e9e7] rounded-md px-2.5 py-1 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437]">
+                class="h-8 flex-1 sm:w-32 bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg px-2.5 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] focus:bg-white transition">
             </div>
-            <div class="flex items-center gap-1.5">
-              <span class="text-xs font-medium text-[#787774]">关联社课：</span>
+            <div class="flex items-center gap-1.5 w-full sm:w-auto">
+              <span class="text-xs font-medium text-[#787774] shrink-0 w-16 sm:w-auto">关联社课：</span>
               <select 
                 v-model="newPublicComment.topicId"
-                class="max-w-[200px] sm:max-w-xs bg-[#fbfbfa] border border-[#e9e9e7] rounded-md px-2.5 py-1 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437]">
+                class="h-8 flex-1 sm:max-w-xs bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg px-2.5 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437] focus:bg-white transition">
                 <option value="general">公共交流 / 通用建议</option>
                 <option v-for="t in topics" :key="t.id" :value="t.id">
                   {{ getTopicMainTitle(t.title) }}
@@ -601,7 +607,7 @@
             rows="3"
             maxlength="200"
             placeholder="写下你想听的议题方向、真实困惑或给主讲人的建议..."
-            class="w-full bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg p-3 text-xs sm:text-sm text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] transition resize-none"></textarea>
+            class="w-full bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg p-3 text-xs sm:text-sm text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] focus:bg-white transition resize-none"></textarea>
 
           <!-- 底部控制栏：字数与提交 -->
           <div class="flex items-center justify-between mt-3 pt-2.5 border-t border-[#f7f6f3]">
@@ -612,7 +618,7 @@
               @click="submitPublicComment"
               :disabled="!newPublicComment.text.trim() || submittingPublicComment"
               :class="newPublicComment.text.trim() && !submittingPublicComment ? 'bg-[#2f3437] hover:bg-[#18181b] text-white shadow-xs cursor-pointer' : 'bg-[#e9e9e7] text-[#9b9a97] cursor-not-allowed'"
-              class="px-4 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5">
+              class="h-8 px-4 rounded-lg text-xs font-medium transition flex items-center gap-1.5">
               <span>{{ submittingPublicComment ? '发布中...' : '发表留言' }}</span>
               <span v-if="!submittingPublicComment">→</span>
             </button>
@@ -623,7 +629,7 @@
         <div v-if="filteredPublicComments.length > 0" class="space-y-2.5">
           <div 
             v-for="c in filteredPublicComments" 
-            :key="c.id"
+            :key="c.id" 
             class="bg-white border border-[#e9e9e7] rounded-xl p-3.5 sm:p-4 transition hover:border-[#d3d1cb]">
             <!-- 留言头信息 -->
             <div class="flex items-center justify-between gap-2 mb-2">
@@ -679,6 +685,16 @@
           <p class="text-[11px] text-[#9b9a97] mt-0.5">欢迎在上方输入框写下你的第一个想法或建议</p>
         </div>
       </section>
+
+      <!-- 极简学术底栏 (Editorial Footer) -->
+      <footer class="mt-14 pt-8 pb-4 border-t border-[#e9e9e7] text-center">
+        <p class="text-xs font-medium text-[#787774] mb-1">
+          朋辈心理学社 · 智性共读与朋辈成长
+        </p>
+        <p class="text-[11px] text-[#9b9a97]">
+          关注真实困惑 · 坚守循证逻辑 · 启发深度思考
+        </p>
+      </footer>
     </main>
 
     <!-- ================= 居中极简浮动岛底栏 (Notion Charcoal Dock) ================= -->
@@ -757,7 +773,13 @@
         <div class="modal-sheet-handle"></div>
 
         <!-- 管理员未登录界面 -->
-        <div v-if="!isAdmin" class="py-6 text-center">
+        <div v-if="!isAdmin" class="py-6 text-center relative">
+          <button 
+            @click="showAdminModal = false" 
+            class="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-[#f0efe9] text-[#787774] hover:text-[#2f3437] flex items-center justify-center text-xs transition"
+            title="关闭">
+            ✕
+          </button>
           <div class="w-10 h-10 mx-auto rounded-full bg-[#f0efe9] text-[#2f3437] flex items-center justify-center mb-2.5">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
