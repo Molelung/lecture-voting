@@ -186,7 +186,7 @@ export default {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    const KV = env.LECTURE_KV;
+    const KV = env.LECTURE_KV || env.VOTING_KV || env.LECTURE_VOTING_KV;
     if (!KV) {
       return jsonResponse({ error: 'KV database binding missing' }, 500);
     }
