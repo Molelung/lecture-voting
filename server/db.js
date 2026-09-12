@@ -125,8 +125,8 @@ function getInitialData() {
 
   return {
     settings: {
-      title: "【朋辈】社团学期公开社课投票",
-      subtitle: "精选候选主题，由大家投票决定本期社课的开讲顺序与深度！每人可投 1~3 票。",
+      title: "朋辈社课大投票！",
+      subtitle: "",
       maxVotesPerUser: 3,
       allowChangeVote: true,
       status: "open", // 'open' | 'paused' | 'closed'
@@ -365,6 +365,24 @@ class Database {
       totalVotesCast,
       topicStats
     };
+  }
+
+  getComments() {
+    return this.data.comments || [];
+  }
+
+  addComment(comment) {
+    if (!this.data.comments) this.data.comments = [];
+    this.data.comments.unshift(comment);
+    this.save();
+    return comment;
+  }
+
+  deleteComment(id) {
+    if (!this.data.comments) return false;
+    this.data.comments = this.data.comments.filter(c => c.id !== id);
+    this.save();
+    return true;
   }
 }
 

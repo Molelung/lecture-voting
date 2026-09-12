@@ -396,4 +396,39 @@ router.get('/admin/export-csv', requireAdmin, (req, res) => {
   res.send(csv);
 });
 
+// 获取全站讨论区留言
+router.get('/comments', (req, res) => {
+  const comments = db.getComments ? db.getComments() : [];
+  res.json({ success: true, comments });
+});
+
+// 发布讨论区留言
+router.post('/comments', (req, res) => {
+  const { text, authorName, topicId } = req.body;
+  if (!text || !text.trim()) {
+    return res.status(400).json({ success: false, error: '留言内容不能为空' });
+  }
+  const cleanAuthor = authorName && authorName.trim() ? authorName.trim().slice(0, 20) : '同学';
+  const newComment = {
+    id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    topicId: topicId || 'general',
+    topicTitle: '',
+    authorName: cleanAuthor,
+    text: text.trim().slice(0, 200),
+    createdAt: new Date().toISOString()
+  };
+  if (db.addComment) {
+    db.addComment(newComment);
+  }
+  res.json({ success: true, message: '留言已发布！', comment: newComment });
+});
+
+// 管理员删除留言
+router.delete('/comments/:id', requireAdmin, (req, res) => {
+  if (db.deleteComment) {
+    db.deleteComment(req.params.id);
+  }
+  res.json({ success: true, message: '留言已删除' });
+});
+
 export default router;
