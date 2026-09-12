@@ -61,16 +61,28 @@ createApp({
     });
     const savingSettings = ref(false);
 
-    // 系统配置与候选选题
-    const settings = ref({
-      title: '朋辈社课 · 选出你最想听的一课',
-      subtitle: '由你投票决定本学期公开课排期顺序（每人限投 1~3 票）',
+    // 系统配置与本地缓存（优先秒级直读本地缓存，杜绝网络请求前后的文字跳闪）
+    const getCachedJson = (key, fallback) => {
+      try {
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    };
+
+    const initialSettings = getCachedJson('lecture_cached_settings', {
+      title: '朋辈社课大投票！',
+      subtitle: '',
       maxVotesPerUser: 3,
       allowChangeVote: true,
       status: 'open',
       resultsVisibility: 'public'
     });
-    const topics = ref([]);
+
+    const settings = ref(initialSettings);
+    const initialTopics = getCachedJson('lecture_cached_topics', []);
+    const topics = ref(initialTopics);
     const stats = ref({
       totalVoters: 0,
       totalVotesCast: 0,
@@ -196,7 +208,12 @@ createApp({
       loading.value = true;
       try {
         const res = await api('/api/status');
-        settings.value = res.settings;
+        if (res.settings) {
+          settings.value = res.settings;
+          try {
+            localStorage.setItem('lecture_cached_settings', JSON.stringify(res.settings));
+          } catch (e) {}
+        }
         initAdminSettingsForm();
         hasVoted.value = res.hasVoted;
         userVote.value = res.userVote;
@@ -229,7 +246,12 @@ createApp({
 
     const loadTopics = async () => {
       const res = await api('/api/topics');
-      topics.value = res.topics;
+      if (res.topics) {
+        topics.value = res.topics;
+        try {
+          localStorage.setItem('lecture_cached_topics', JSON.stringify(res.topics));
+        } catch (e) {}
+      }
     };
 
     const loadResults = async () => {
@@ -837,6 +859,9 @@ createApp({
           body: JSON.stringify(adminSettingsForm.value)
         });
         settings.value = { ...settings.value, ...res.settings };
+        try {
+          localStorage.setItem('lecture_cached_settings', JSON.stringify(settings.value));
+        } catch (e) {}
         showToast('系统全局配置已即时更新生效！', 'success');
       } catch (e) {
         showToast('配置保存失败: ' + e.message, 'error');
