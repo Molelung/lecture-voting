@@ -23,6 +23,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+[v-cloak] {
+  display: none !important;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-page);
