@@ -39,7 +39,7 @@
   <script src="./vendor/confetti.js"></script>
   <link rel="stylesheet" href="./style.css">
 </head>
-<body class="antialiased selection:bg-zinc-800 selection:text-white pb-24 sm:pb-28 bg-[#fbfbfa] text-[#2f3437]">
+<body class="antialiased selection:bg-zinc-800 selection:text-white pb-28 sm:pb-32 bg-[#fbfbfa] text-[#2f3437]">
   <div id="app" v-cloak class="min-h-screen flex flex-col">
     <!-- 顶部极简学术导航条 (Notion Header) -->
     <header class="sticky top-0 z-40 bg-[#fbfbfa]/90 backdrop-blur-md px-4 sm:px-8 py-3 flex items-center justify-between gap-3 border-b border-[#e9e9e7]">
@@ -470,7 +470,10 @@
               <!-- 主题与进度条 -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between gap-2 mb-1">
-                  <h4 class="font-medium text-[#2f3437] text-xs sm:text-sm truncate">{{ t.title }}</h4>
+                  <div class="min-w-0">
+                    <h4 class="font-medium text-[#2f3437] text-xs sm:text-sm truncate">{{ getTopicMainTitle(t.title) }}</h4>
+                    <span v-if="getTopicSubTitle(t.title)" class="text-[11px] text-[#787774] truncate block">{{ getTopicSubTitle(t.title) }}</span>
+                  </div>
                   <span class="text-xs font-semibold text-[#2f3437] shrink-0 font-serif">{{ t.count }} 票 <span class="text-[#787774] font-normal text-[10px]">({{ t.percentage }}%)</span></span>
                 </div>
                 <div class="w-full bg-[#e9e9e7] h-1.5 rounded-full overflow-hidden">
@@ -664,7 +667,7 @@
             v-for="t in selectedTopics" 
             :key="t.id" 
             class="p-2 bg-[#f7f6f3] rounded-lg border border-[#e9e9e7] text-xs font-medium text-[#2f3437] flex items-center justify-between gap-2">
-            <span class="truncate">{{ t.title }}</span>
+            <span class="truncate">{{ getTopicMainTitle(t.title) }}</span>
             <span class="text-[10px] text-[#787774] shrink-0">{{ t.category }}</span>
           </div>
         </div>
