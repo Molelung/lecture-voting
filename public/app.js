@@ -1,4 +1,4 @@
-const { createApp, ref, computed, onMounted } = Vue;
+const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
 createApp({
   setup() {
@@ -80,6 +80,10 @@ createApp({
     const activeCategory = ref('全部');
     const searchQuery = ref('');
     const showSearchInput = ref(false);
+    const showMobileSearch = ref(false);
+    const showCategoryDrawer = ref(false);
+    const categoryScrollContainer = ref(null);
+    const mobileSearchInputRef = ref(null);
     const expandedTopicIds = ref([]);
     const topicComments = ref({});
     const newCommentTexts = ref({});
@@ -512,11 +516,69 @@ createApp({
       }
     };
 
+    // 切换移动端搜索输入框
+    const toggleMobileSearch = () => {
+      showMobileSearch.value = !showMobileSearch.value;
+      triggerHaptic('light');
+      if (showMobileSearch.value) {
+        nextTick(() => {
+          if (mobileSearchInputRef.value) {
+            mobileSearchInputRef.value.focus();
+          }
+        });
+      }
+    };
+
+    // 选中分类并居中平滑滚动
+    const selectCategory = (catName, event) => {
+      activeCategory.value = catName;
+      triggerHaptic('light');
+      if (event && event.currentTarget) {
+        event.currentTarget.scrollIntoView({
+          behavior: 'smooth',
+          inline: 'center',
+          block: 'nearest'
+        });
+      }
+    };
+
+    // 从移动端底部抽屉选中分类
+    const selectCategoryFromDrawer = (catName) => {
+      activeCategory.value = catName;
+      showCategoryDrawer.value = false;
+      triggerHaptic('light');
+      nextTick(() => {
+        const container = categoryScrollContainer.value;
+        if (container) {
+          const buttons = container.querySelectorAll('button');
+          for (const btn of buttons) {
+            if (btn.textContent.includes(catName)) {
+              btn.scrollIntoView({
+                behavior: 'smooth',
+                inline: 'center',
+                block: 'nearest'
+              });
+              break;
+            }
+          }
+        }
+      });
+    };
+
+    // 重置全部筛选与搜索
+    const resetFilter = () => {
+      activeCategory.value = '全部';
+      searchQuery.value = '';
+      showMobileSearch.value = false;
+      triggerHaptic('light');
+    };
+
     // 清空搜索
     const clearSearch = () => {
       searchQuery.value = '';
       activeCategory.value = '全部';
       showSearchInput.value = false;
+      showMobileSearch.value = false;
     };
 
     // 分享与复制
@@ -867,6 +929,14 @@ createApp({
       filteredTopics,
       searchQuery,
       showSearchInput,
+      showMobileSearch,
+      showCategoryDrawer,
+      categoryScrollContainer,
+      mobileSearchInputRef,
+      toggleMobileSearch,
+      selectCategory,
+      selectCategoryFromDrawer,
+      resetFilter,
       expandedTopicIds,
       topicComments,
       newCommentTexts,
