@@ -27,6 +27,12 @@ createApp({
     const adminLoginForm = ref({ username: 'admin', password: '' });
     const ballots = ref([]);
     const ballotSearchQuery = ref('');
+    const adminTopicSearchQuery = ref('');
+    const adminExpandedTopicIds = ref([]);
+    const adminCommentFilter = ref('all');
+    const adminCommentSearch = ref('');
+    const adminDiagnostics = ref(null);
+    const adminReordering = ref(false);
 
     // 社课内容编辑与新增状态
     const showTopicEditModal = ref(false);
@@ -636,6 +642,125 @@ createApp({
       });
     });
 
+    // 管理员社课列表筛选
+    const filteredAdminTopics = computed(() => {
+      if (!adminTopicSearchQuery.value.trim()) return topics.value;
+      const q = adminTopicSearchQuery.value.trim().toLowerCase();
+      return topics.value.filter(t => {
+        return (t.title || '').toLowerCase().includes(q) ||
+               (t.speaker || '').toLowerCase().includes(q) ||
+               (t.category || '').toLowerCase().includes(q) ||
+               (t.tag || '').toLowerCase().includes(q) ||
+               (t.summary || '').toLowerCase().includes(q);
+      });
+    });
+
+    // 展开/收起后台社课详情预览
+    const toggleAdminTopicExpand = (id) => {
+      const idx = adminExpandedTopicIds.value.indexOf(id);
+      if (idx === -1) {
+        adminExpandedTopicIds.value.push(id);
+      } else {
+        adminExpandedTopicIds.value.splice(idx, 1);
+      }
+    };
+
+    // 调整社课排期顺序 (上移/下移)
+    const moveTopic = async (topic, direction) => {
+      const currentList = [...topics.value];
+      const index = currentList.findIndex(t => t.id === topic.id);
+      if (index === -1) return;
+      if (direction === 'up' && index > 0) {
+        const temp = currentList[index - 1];
+        currentList[index - 1] = currentList[index];
+        currentList[index] = temp;
+      } else if (direction === 'down' && index < currentList.length - 1) {
+        const temp = currentList[index + 1];
+        currentList[index + 1] = currentList[index];
+        currentList[index] = temp;
+      } else {
+        return;
+      }
+
+      adminReordering.value = true;
+      try {
+        const orderedIds = currentList.map(t => t.id);
+        const res = await api('/api/admin/topics/reorder', {
+          method: 'PUT',
+          body: JSON.stringify({ orderedIds })
+        });
+        topics.value = res.topics || currentList;
+        showToast('社课显示排序已即刻更新！', 'success');
+      } catch (e) {
+        showToast('排序更新失败: ' + e.message, 'error');
+      } finally {
+        adminReordering.value = false;
+      }
+    };
+
+    // 克隆创建社课副本
+    const duplicateTopic = (topic) => {
+      isEditingNewTopic.value = true;
+      const formattedOutline = Array.isArray(topic.outline)
+        ? topic.outline.map(item => {
+            if (typeof item === 'object' && item !== null) {
+              if (item.tag && item.desc) return `${item.tag} · ${item.desc}`;
+              return item.desc || item.tag || JSON.stringify(item);
+            }
+            return String(item);
+          }).join('\n')
+        : (topic.outline || '');
+
+      editingTopic.value = {
+        id: '',
+        title: (topic.title || '') + ' (副本)',
+        speaker: topic.speaker || '',
+        category: topic.category || '',
+        tag: topic.tag || '',
+        duration: topic.duration || '',
+        hook: topic.hook || '',
+        summary: topic.summary || '',
+        outlineText: formattedOutline
+      };
+      showTopicEditModal.value = true;
+      showToast('已复制社课模板，修改后点击保存即可新增', 'info');
+    };
+
+    // 选票统计聚合概览
+    const ballotStatsSummary = computed(() => {
+      const totalVoters = ballots.value.length;
+      let totalVotes = 0;
+      let commentCount = 0;
+      for (const b of ballots.value) {
+        totalVotes += (b.topicIds && b.topicIds.length) || 0;
+        if (b.comment && b.comment.trim()) commentCount++;
+      }
+      const avgVotes = totalVoters > 0 ? (totalVotes / totalVoters).toFixed(1) : '0.0';
+      const commentRate = totalVoters > 0 ? Math.round((commentCount / totalVoters) * 100) : 0;
+      return { totalVoters, totalVotes, avgVotes, commentRate };
+    });
+
+    // 管理员讨论治理筛选
+    const filteredAdminComments = computed(() => {
+      let list = publicComments.value;
+      if (adminCommentFilter.value !== 'all') {
+        if (adminCommentFilter.value === 'general') {
+          list = list.filter(c => !c.topicId || c.topicId === 'general');
+        } else {
+          list = list.filter(c => c.topicId === adminCommentFilter.value);
+        }
+      }
+      if (adminCommentSearch.value.trim()) {
+        const q = adminCommentSearch.value.trim().toLowerCase();
+        list = list.filter(c => {
+          return (c.text || '').toLowerCase().includes(q) ||
+                 (c.authorName || '').toLowerCase().includes(q) ||
+                 (c.topicTitle || '').toLowerCase().includes(q);
+        });
+      }
+      return list;
+    });
+
     // 管理员相关操作
     const initAdminSettingsForm = () => {
       if (settings.value) {
@@ -650,12 +775,20 @@ createApp({
       }
     };
 
+    const loadDiagnostics = async () => {
+      try {
+        const res = await api('/api/admin/diagnostics');
+        adminDiagnostics.value = res;
+      } catch (e) {}
+    };
+
     const openAdminModal = () => {
       showAdminModal.value = true;
       initAdminSettingsForm();
       if (isAdmin.value) {
         loadBallots();
         loadPublicComments();
+        loadDiagnostics();
       }
     };
 
@@ -673,6 +806,7 @@ createApp({
         loadBallots();
         loadResults();
         loadPublicComments();
+        loadDiagnostics();
       } catch (e) {
         showToast(e.message || '账号或密码错误', 'error');
       }
@@ -882,6 +1016,68 @@ createApp({
       showToast('选票明细 CSV 导出成功！', 'success');
     };
 
+    // 单张选票撤销删除
+    const deleteBallot = async (ballot) => {
+      if (!confirm(`确定撤销选票 #${ballot.id.slice(-8)} 吗？此操作将同步扣减对应社课的票数。`)) return;
+      try {
+        await api(`/api/admin/ballots/${ballot.id}`, { method: 'DELETE' });
+        showToast('选票已成功撤销并扣减对应票数！', 'success');
+        ballots.value = ballots.value.filter(b => b.id !== ballot.id);
+        await loadTopics();
+        if (canSeeResults.value) {
+          await loadResults();
+        }
+      } catch (e) {
+        showToast('撤销选票失败: ' + e.message, 'error');
+      }
+    };
+
+    // 全量备份导出
+    const downloadBackup = async () => {
+      try {
+        const res = await api('/api/admin/backup');
+        const jsonStr = JSON.stringify(res.data, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `社课投票全量备份_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('全量 JSON 备份已下载！', 'success');
+      } catch (e) {
+        showToast('导出备份失败: ' + e.message, 'error');
+      }
+    };
+
+    // 从备份文件恢复
+    const restoreFromJsonFile = async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      if (!confirm(`确定导入备份文件《${file.name}》并全量覆盖当前数据吗？此操作不可撤销！`)) {
+        event.target.value = '';
+        return;
+      }
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        await api('/api/admin/restore', {
+          method: 'POST',
+          body: JSON.stringify({ data })
+        });
+        showToast('系统数据已全量恢复！', 'success');
+        await initData();
+        await loadBallots();
+        await loadPublicComments();
+        await loadDiagnostics();
+      } catch (e) {
+        showToast('恢复数据失败: ' + (e.message || '文件格式错误'), 'error');
+      } finally {
+        event.target.value = '';
+      }
+    };
+
     // 静默无感实时同步（用户切回标签页或每 25 秒自动拉取最新投票数和公共讨论）
     const refreshLiveState = async () => {
       if (document.visibilityState !== 'visible') return;
@@ -960,6 +1156,22 @@ createApp({
       ballots,
       ballotSearchQuery,
       filteredBallots,
+      adminTopicSearchQuery,
+      filteredAdminTopics,
+      adminExpandedTopicIds,
+      toggleAdminTopicExpand,
+      moveTopic,
+      duplicateTopic,
+      deleteBallot,
+      ballotStatsSummary,
+      adminCommentFilter,
+      adminCommentSearch,
+      filteredAdminComments,
+      adminDiagnostics,
+      loadDiagnostics,
+      downloadBackup,
+      restoreFromJsonFile,
+      adminReordering,
       showTopicEditModal,
       isEditingNewTopic,
       editingTopic,

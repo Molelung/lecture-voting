@@ -677,6 +677,22 @@ export default {
           return jsonResponse({ success: true, ballots });
         }
 
+        // DELETE /api/admin/ballots/:id (撤销删除指定单个选票)
+        if (path.startsWith('/api/admin/ballots/') && method === 'DELETE') {
+          const ballotId = path.split('/')[4];
+          if (DB) {
+            const row = await DB.prepare('SELECT voter_token FROM ballots WHERE id = ?').bind(ballotId).first();
+            if (row) {
+              await DB.batch([
+                DB.prepare('DELETE FROM ballots WHERE id = ?').bind(ballotId),
+                DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(row.voter_token)
+              ]);
+              if (KV) await KV.delete('voter:' + row.voter_token);
+            }
+          }
+          return jsonResponse({ success: true, message: '选票明细已成功撤销并同步扣减！' });
+        }
+
         // POST /api/admin/clear-votes (彻底清空重置选票与选民状态)
         if ((path === '/api/admin/clear-votes' || path === '/api/admin/reset-votes') && method === 'POST') {
           if (DB) {
@@ -716,6 +732,27 @@ export default {
           }
         }
 
+        // PUT /api/admin/topics/reorder (调整社课前台展示排序)
+        if (path === '/api/admin/topics/reorder' && method === 'PUT') {
+          const body = await request.json().catch(() => ({}));
+          const { orderedIds } = body;
+          if (Array.isArray(orderedIds)) {
+            let currentTopics = await getJsonKV(KV, 'topics', []);
+            const map = new Map(currentTopics.map(t => [t.id, t]));
+            const nextTopics = [];
+            for (const id of orderedIds) {
+              if (map.has(id)) {
+                nextTopics.push(map.get(id));
+                map.delete(id);
+              }
+            }
+            for (const rem of map.values()) nextTopics.push(rem);
+            await safePutKV(KV, 'topics', JSON.stringify(nextTopics));
+            return jsonResponse({ success: true, message: '社课排期顺序已更新并生效！', topics: nextTopics });
+          }
+          return jsonResponse({ error: '无效排序参数' }, 400);
+        }
+
         // POST /api/admin/topics
         if (path === '/api/admin/topics' && method === 'POST') {
           const body = await request.json().catch(() => ({}));
@@ -723,7 +760,7 @@ export default {
           if (!title || !title.trim()) return jsonResponse({ error: '社课主题名称不能为空' }, 400);
 
           const outlineArr = Array.isArray(outline) 
-            ? outline.map(s => String(s).trim()).filter(Boolean)
+            ? outline.map(s => (typeof s === 'object' ? s : String(s).trim())).filter(Boolean)
             : (typeof outline === 'string' ? outline.split('\n').map(s => s.trim()).filter(Boolean) : []);
 
           let topics = await getJsonKV(KV, 'topics', []);
@@ -736,7 +773,7 @@ export default {
             duration: (duration || '45分钟讲解 + 15分钟互动').trim(),
             hook: (hook || '').trim(),
             summary: (summary || '').trim(),
-            outline: outlineArr.length > 0 ? outlineArr : ['主题内容筹备中...'],
+            outline: outlineArr.length > 0 ? outlineArr : [{ tag: '核心要点', desc: '主题内容筹备中...' }],
             createdAt: new Date().toISOString()
           };
           topics.push(newTopic);
@@ -754,7 +791,7 @@ export default {
 
           if (updates.outline !== undefined) {
             updates.outline = Array.isArray(updates.outline)
-              ? updates.outline.map(s => String(s).trim()).filter(Boolean)
+              ? updates.outline.map(s => (typeof s === 'object' ? s : String(s).trim())).filter(Boolean)
               : (typeof updates.outline === 'string' ? updates.outline.split('\n').map(s => s.trim()).filter(Boolean) : []);
           }
           topics[idx] = { ...topics[idx], ...updates, id: topicId, updatedAt: new Date().toISOString() };
@@ -769,6 +806,86 @@ export default {
           topics = topics.filter(t => t.id !== topicId);
           await safePutKV(KV, 'topics', JSON.stringify(topics));
           return jsonResponse({ success: true, message: '社课议题已删除！' });
+        }
+
+        // GET /api/admin/backup (系统全量数据备份)
+        if (path === '/api/admin/backup' && method === 'GET') {
+          const [settings, topics] = await Promise.all([
+            getJsonKV(KV, 'settings', {}),
+            getJsonKV(KV, 'topics', [])
+          ]);
+          let ballots = [];
+          let comments = [];
+          if (DB) {
+            const bRes = await DB.prepare('SELECT * FROM ballots ORDER BY voted_at DESC').all();
+            ballots = (bRes.results || []).map(b => ({
+              id: b.id,
+              voterToken: b.voter_token,
+              topicIds: JSON.parse(b.topic_ids || '[]'),
+              comment: b.comment,
+              clientIp: b.client_ip,
+              votedAt: b.voted_at
+            }));
+            const cRes = await DB.prepare('SELECT * FROM comments ORDER BY created_at DESC').all();
+            comments = cRes.results || [];
+          }
+          return jsonResponse({
+            success: true,
+            version: '2.0-d1',
+            exportedAt: new Date().toISOString(),
+            data: { settings, topics, ballots, comments }
+          });
+        }
+
+        // POST /api/admin/restore (从备份中恢复全量数据)
+        if (path === '/api/admin/restore' && method === 'POST') {
+          const body = await request.json().catch(() => ({}));
+          const { data } = body;
+          if (!data) return jsonResponse({ error: '备份数据格式无效' }, 400);
+          if (data.settings) await safePutKV(KV, 'settings', JSON.stringify(data.settings));
+          if (data.topics && Array.isArray(data.topics)) await safePutKV(KV, 'topics', JSON.stringify(data.topics));
+          if (DB && data.ballots && Array.isArray(data.ballots)) {
+            const batch = [
+              DB.prepare('DELETE FROM ballots'),
+              DB.prepare('DELETE FROM vote_items')
+            ];
+            for (const b of data.ballots) {
+              const tids = b.topicIds || [];
+              batch.push(
+                DB.prepare('INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at) VALUES (?, ?, ?, ?, ?, ?)')
+                  .bind(b.id, b.voterToken, JSON.stringify(tids), b.comment || '', b.clientIp || '', b.votedAt || new Date().toISOString())
+              );
+              for (const tid of tids) {
+                batch.push(
+                  DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)')
+                    .bind(b.voterToken, tid, b.votedAt || new Date().toISOString())
+                );
+              }
+            }
+            await DB.batch(batch);
+          }
+          return jsonResponse({ success: true, message: '系统数据已成功从备份恢复！' });
+        }
+
+        // GET /api/admin/diagnostics (系统边缘节点与数据监控)
+        if (path === '/api/admin/diagnostics' && method === 'GET') {
+          let counts = { ballots: 0, voteItems: 0, comments: 0 };
+          if (DB) {
+            const res = await DB.prepare(`
+              SELECT 
+                (SELECT COUNT(*) FROM ballots) as ballots,
+                (SELECT COUNT(*) FROM vote_items) as voteItems,
+                (SELECT COUNT(*) FROM comments) as comments
+            `).first();
+            if (res) counts = res;
+          }
+          return jsonResponse({
+            success: true,
+            engine: DB ? 'Cloudflare D1 (SQLite ACID)' : 'Cloudflare KV',
+            edgeLocation: request.cf?.colo || 'AMS',
+            counts,
+            timestamp: new Date().toISOString()
+          });
         }
       }
 
