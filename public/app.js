@@ -86,7 +86,8 @@ createApp({
           { tag: "生活框架陷阱", desc: "破解消费营销与人际交流中的认知误导话术" },
           { tag: "思维自检工具", desc: "掌握 4 步可落地的日常去偏差化理性反思模型" }
         ],
-        count: 0
+        count: 0,
+        stats: { locked: false, count: 0, percentage: 0 }
       },
       {
         id: "topic-2",
@@ -102,7 +103,8 @@ createApp({
           { tag: "打破完美主义", desc: "化解'全或无'思维引发的内耗与行动瘫痪" },
           { tag: "微步启动实操", desc: "现场落地 2 分钟启动法则与环境摩擦力微调方案" }
         ],
-        count: 0
+        count: 0,
+        stats: { locked: false, count: 0, percentage: 0 }
       },
       {
         id: "topic-3",
@@ -118,7 +120,8 @@ createApp({
           { tag: "寝室与团队协作", desc: "破解搭便车难题与利益博弈中的正向激励设计" },
           { tag: "长期合作网络", desc: "在不确定社交环境中建立高信誉度的人际护城河" }
         ],
-        count: 0
+        count: 0,
+        stats: { locked: false, count: 0, percentage: 0 }
       },
       {
         id: "topic-4",
@@ -134,7 +137,8 @@ createApp({
           { tag: "非暴力沟通", desc: "区分观察、感受、需要与请求的四步实操练习" },
           { tag: "重塑安全型自我", desc: "建立清晰的人际边界，在亲密与独立间从容自处" }
         ],
-        count: 0
+        count: 0,
+        stats: { locked: false, count: 0, percentage: 0 }
       },
       {
         id: "topic-5",
@@ -150,7 +154,8 @@ createApp({
           { tag: "数字极简主义", desc: "抵抗算法信息流诱惑，主动为日常信息输入降噪" },
           { tag: "个人输出系统", desc: "从被动碎片收藏转向高效内化与结构化实践" }
         ],
-        count: 0
+        count: 0,
+        stats: { locked: false, count: 0, percentage: 0 }
       },
       {
         id: "topic-6",
@@ -166,7 +171,8 @@ createApp({
           { tag: "事实核查工具", desc: "信源可靠度分级、交叉验证与第一手证据溯源" },
           { tag: "慢思考决策习惯", desc: "面对情绪化热点时抑制即刻反应，开启元认知审视" }
         ],
-        count: 0
+        count: 0,
+        stats: { locked: false, count: 0, percentage: 0 }
       }
     ];
 
