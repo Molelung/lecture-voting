@@ -168,7 +168,7 @@ export default {
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
     const voterToken = request.headers.get('X-Voter-Token') || url.searchParams.get('voterToken') || '';
     const adminUser = parseUserFromHeader(request);
-    const isAdmin = adminUser && adminUser.role === 'admin';
+    const isAdmin = !!(adminUser && adminUser.role === 'admin');
 
     try {
       // 根路径直连智能跳转
@@ -229,9 +229,11 @@ export default {
               };
             }
 
-            const canSeeResults = settings.resultsVisibility === 'public' || 
+            const canSeeResults = Boolean(
+              settings.resultsVisibility === 'public' || 
               (settings.resultsVisibility === 'after_vote' && hasVoted) || 
-              isAdmin;
+              isAdmin
+            );
 
             const dur = Date.now() - startTime;
             return jsonResponse({
@@ -260,9 +262,11 @@ export default {
         totalVoters = ballots.length;
         totalVotesCast = ballots.reduce((acc, b) => acc + ((b.topicIds && b.topicIds.length) || 0), 0);
 
-        const canSeeResults = settings.resultsVisibility === 'public' || 
+        const canSeeResults = Boolean(
+          settings.resultsVisibility === 'public' || 
           (settings.resultsVisibility === 'after_vote' && hasVoted) || 
-          isAdmin;
+          isAdmin
+        );
 
         const dur = Date.now() - startTime;
         return jsonResponse({
@@ -316,9 +320,11 @@ export default {
           }
         }
 
-        const canViewCounts = settings.resultsVisibility === 'public' || 
+        const canViewCounts = Boolean(
+          settings.resultsVisibility === 'public' || 
           (settings.resultsVisibility === 'after_vote' && hasVoted) || 
-          isAdmin;
+          isAdmin
+        );
 
         const enrichedTopics = topics.map(t => {
           const voteCount = counts[t.id] || 0;
