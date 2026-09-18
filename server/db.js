@@ -16,8 +16,8 @@ if (!fs.existsSync(DATA_DIR)) {
 const DEFAULT_TOPICS = [
   {
     "id": "topic-1",
-    "title": "【向内】爱自己",
-    "speaker": "朋辈社课组",
+    "title": "【向内】爱自己（自我疗愈）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向内",
     "tag": "自我疗愈",
     "duration": "45分钟 + 15分钟研讨",
@@ -28,8 +28,8 @@ const DEFAULT_TOPICS = [
   },
   {
     "id": "topic-2",
-    "title": "【向内】你想要怎样的人生？",
-    "speaker": "朋辈社课组",
+    "title": "【向内】你想要怎样的人生？（自我认同与人生理想）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向内",
     "tag": "自我认同",
     "duration": "45分钟 + 15分钟研讨",
@@ -40,8 +40,8 @@ const DEFAULT_TOPICS = [
   },
   {
     "id": "topic-3",
-    "title": "【向内】类型心理学",
-    "speaker": "朋辈社课组",
+    "title": "【向内】类型心理学（认知功能与心智偏好）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向内",
     "tag": "人格类型",
     "duration": "45分钟 + 15分钟研讨",
@@ -52,8 +52,8 @@ const DEFAULT_TOPICS = [
   },
   {
     "id": "topic-4",
-    "title": "【向内】翻山越岭时",
-    "speaker": "朋辈社课组",
+    "title": "【向内】翻山越岭时（目的论与课题分离）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向内",
     "tag": "阿德勒心理学",
     "duration": "45分钟 + 15分钟研讨",
@@ -64,8 +64,8 @@ const DEFAULT_TOPICS = [
   },
   {
     "id": "topic-5",
-    "title": "【向内】梦之迷思",
-    "speaker": "朋辈社课组",
+    "title": "【向内】梦之迷思（释梦与精神分析）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向内",
     "tag": "精神分析",
     "duration": "45分钟 + 15分钟研讨",
@@ -76,8 +76,8 @@ const DEFAULT_TOPICS = [
   },
   {
     "id": "topic-6",
-    "title": "【向内】我们本为矛盾集合体",
-    "speaker": "朋辈社课组",
+    "title": "【向内】我们本为矛盾集合体（神经症结与冲突化解）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向内",
     "tag": "神经症结",
     "duration": "45分钟 + 15分钟研讨",
@@ -88,8 +88,8 @@ const DEFAULT_TOPICS = [
   },
   {
     "id": "topic-7",
-    "title": "【向内】考试在考些什么！",
-    "speaker": "朋辈社课组",
+    "title": "【向内】考试在考些什么！（考试脑科学与认知突围）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向内",
     "tag": "考试脑科学",
     "duration": "45分钟 + 15分钟研讨",
@@ -100,8 +100,8 @@ const DEFAULT_TOPICS = [
   },
   {
     "id": "topic-8",
-    "title": "【向内】当人生的丘比特",
-    "speaker": "朋辈社课组",
+    "title": "【向内】当人生的丘比特（青春期与亲密之爱）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向内",
     "tag": "青春期与爱情",
     "duration": "45分钟 + 15分钟研讨",
@@ -112,8 +112,20 @@ const DEFAULT_TOPICS = [
   },
   {
     "id": "topic-9",
-    "title": "【向外】爱河于爱意中流淌",
-    "speaker": "朋辈社课组",
+    "title": "【向内】完美只存于心（破解完美主义）",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "破解完美主义",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "完美是心智虚构的无形枷锁；唯有允许裂痕的存在，真实的光芒与生命力方得舒展。",
+    "summary": "破除‘必须做到尽善尽美’的认知枷锁，立足临床心理学与认知行为理论（CBT）对适应不良型完美主义（Maladaptive Perfectionism）的系统剖析。深度解构‘全或无’二分思维、冒充者综合征与对负面评价的恐惧（Fear of Negative Evaluation），探讨成就与自我价值（Self-Worth）的过度捆绑机制。结合接纳承诺疗法（ACT）与‘足够好’（Good Enough）原则，传授认知重构与行为暴露心法，学会在真实世界的瑕疵中安住身心，破解拖延与自我内耗，重获轻盈前行的心理弹性。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:09.000Z"
+  },
+  {
+    "id": "topic-10",
+    "title": "【向外】爱河于爱意中流淌（亲密关系·爱情篇）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向外",
     "tag": "亲密关系·爱情篇",
     "duration": "45分钟 + 15分钟研讨",
@@ -123,9 +135,9 @@ const DEFAULT_TOPICS = [
     "createdAt": "2026-09-18T21:56:01.000Z"
   },
   {
-    "id": "topic-10",
-    "title": "【向外】友谊于真情中长存",
-    "speaker": "朋辈社课组",
+    "id": "topic-11",
+    "title": "【向外】友谊于真情中长存（亲密关系·友谊篇）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向外",
     "tag": "亲密关系·友谊篇",
     "duration": "45分钟 + 15分钟研讨",
@@ -135,9 +147,9 @@ const DEFAULT_TOPICS = [
     "createdAt": "2026-09-18T21:56:02.000Z"
   },
   {
-    "id": "topic-11",
-    "title": "【向外】脏话心理学",
-    "speaker": "朋辈社课组",
+    "id": "topic-12",
+    "title": "【向外】脏话心理学（社会心理成因与言语觉察）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向外",
     "tag": "社会心理学",
     "duration": "45分钟 + 15分钟研讨",
@@ -147,9 +159,9 @@ const DEFAULT_TOPICS = [
     "createdAt": "2026-09-18T21:56:03.000Z"
   },
   {
-    "id": "topic-12",
-    "title": "【向下】心绪流淌",
-    "speaker": "朋辈社课组",
+    "id": "topic-13",
+    "title": "【向下】心绪流淌（心流体验）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向下",
     "tag": "心流状态",
     "duration": "45分钟 + 15分钟研讨",
@@ -159,9 +171,9 @@ const DEFAULT_TOPICS = [
     "createdAt": "2026-09-18T21:58:01.000Z"
   },
   {
-    "id": "topic-13",
-    "title": "【向下】天赋赠予我",
-    "speaker": "朋辈社课组",
+    "id": "topic-14",
+    "title": "【向下】天赋赠予我（刻意练习）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向下",
     "tag": "刻意练习",
     "duration": "45分钟 + 15分钟研讨",
@@ -171,9 +183,9 @@ const DEFAULT_TOPICS = [
     "createdAt": "2026-09-18T21:58:02.000Z"
   },
   {
-    "id": "topic-14",
-    "title": "【向下】锚定思绪",
-    "speaker": "朋辈社课组",
+    "id": "topic-15",
+    "title": "【向下】锚定思绪（专注力重塑）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向下",
     "tag": "专注力管理",
     "duration": "45分钟 + 15分钟研讨",
@@ -183,9 +195,9 @@ const DEFAULT_TOPICS = [
     "createdAt": "2026-09-18T21:58:03.000Z"
   },
   {
-    "id": "topic-15",
-    "title": "【向下】遁入空灵",
-    "speaker": "朋辈社课组",
+    "id": "topic-16",
+    "title": "【向下】遁入空灵（正念与移空）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向下",
     "tag": "正念与移空",
     "duration": "45分钟 + 15分钟研讨",
@@ -195,9 +207,9 @@ const DEFAULT_TOPICS = [
     "createdAt": "2026-09-18T21:58:04.000Z"
   },
   {
-    "id": "topic-16",
-    "title": "【向下】手指伸缩自如",
-    "speaker": "朋辈社课组",
+    "id": "topic-17",
+    "title": "【向下】手指伸缩自如（自控力科学）",
+    "speaker": "墨澜 & 诙谐",
     "category": "向下",
     "tag": "自控力科学",
     "duration": "45分钟 + 15分钟研讨",
@@ -205,6 +217,18 @@ const DEFAULT_TOPICS = [
     "summary": "颠覆‘靠死撑对抗诱惑’的误区，以自我损耗模型（Ego Depletion）的最新修正与前额叶抑制控制（Inhibitory Control）机制为依托。深度拆解多巴胺渴求回路与即时满足陷阱，传授冷热认知切换、执行意图（Implementation Intentions，若-则计划）与预先承诺策略，实现如‘手指伸缩自如’般游刃有余、不费力的自律实践。",
     "outline": [],
     "createdAt": "2026-09-18T21:58:05.000Z"
+  },
+  {
+    "id": "topic-18",
+    "title": "【向下】清醒的活（当下思维与人生聚光灯）",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向下",
+    "tag": "清醒生活",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "把聚光灯聚焦于当下的每一步微光，不留恋退场，不畏惧暗处，清醒行进。",
+    "summary": "深度汲取《清醒地活着》（The Untethered Soul）的心灵洞见，并与阿德勒个体心理学中‘人生如连续刹那的聚光灯舞台’哲学思想深度交融。跳脱对过去遗憾的反刍与对未来不确定性的灾难化预演，引导我们觉察内心永不停歇的‘独白者’，以超越性的觉知打破情绪内耗与认知纠缠；学会收束弥散的焦虑，将全部心力聚焦于此时此刻正在经历的‘点’，在踏实的行进中体验安顿、澄明与真实的生命力量。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:58:06.000Z"
   }
 ];
 
@@ -220,7 +244,7 @@ function getInitialData() {
       maxVotesPerUser: 3,
       allowChangeVote: true,
       status: "open", // 'open' | 'paused' | 'closed'
-      resultsVisibility: "public", // 'public' | 'after_vote' | 'admin_only'
+      resultsVisibility: "after_vote", // 'public' | 'after_vote' | 'admin_only'
       updatedAt: new Date().toISOString()
     },
     topics: DEFAULT_TOPICS,

@@ -159,7 +159,9 @@ router.get('/topics', (req, res) => {
 
   const enrichedTopics = topics.map(topic => ({
     ...topic,
-    stats: canSeeResults ? (countMap[topic.id] || { count: 0, percentage: 0 }) : null
+    stats: canSeeResults 
+      ? { ...(countMap[topic.id] || { count: 0, percentage: 0 }), locked: false }
+      : { locked: true, count: null, percentage: 0 }
   }));
 
   res.json({

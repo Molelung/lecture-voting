@@ -349,31 +349,26 @@
                 </div>
               </div>
 
-              <!-- 社课主标题与副标题结构化呈现 (告别混乱大段字) -->
+              <!-- 社课主标题与副标题结构化呈现 (自动换行，告别单行省略号截断) -->
               <div class="mb-2">
-                <h3 class="text-[15px] sm:text-base font-bold text-[#2f3437] tracking-tight leading-snug">
+                <h3 class="text-[15px] sm:text-base font-bold text-[#2f3437] tracking-tight leading-snug break-words">
                   {{ getTopicMainTitle(topic.title) }}
                 </h3>
-                <span v-if="getTopicSubTitle(topic.title)" class="block text-xs font-normal text-[#787774] mt-0.5 leading-normal">
+                <span v-if="getTopicSubTitle(topic.title)" class="block text-xs font-normal text-[#787774] mt-0.5 leading-normal break-words">
                   {{ getTopicSubTitle(topic.title) }}
                 </span>
               </div>
 
-              <!-- 思考抓手一句话摘要 (微缩预览) -->
-              <p v-if="topic.hook" class="text-xs text-[#787774] line-clamp-1 mb-1.5 leading-relaxed italic">
+              <!-- 思考抓手一句话摘要 (微缩预览，自然折行不截断) -->
+              <p v-if="topic.hook" class="text-xs text-[#787774] mb-2 leading-relaxed italic break-words">
                 “{{ topic.hook }}”
-              </p>
-
-              <!-- 课程简介摘要 (2行优雅微缩) -->
-              <p v-if="topic.summary" class="text-xs text-[#5a5853] line-clamp-2 mb-2.5 leading-relaxed">
-                {{ topic.summary }}
               </p>
 
               <!-- 底栏状态行：票数状态 + 手风琴展开按钮 -->
               <div class="flex items-center justify-between pt-2 border-t border-[#f0efe9] text-xs">
-                <!-- 票数状态 -->
+                <!-- 票数状态 (未投票时锁定保密，投后即刻解锁) -->
                 <div class="flex items-center gap-1.5">
-                  <span v-if="topic.stats && topic.stats.locked" class="inline-flex items-center gap-1 text-[11px] text-[#9b9a97]">
+                  <span v-if="!canSeeResults || (topic.stats && topic.stats.locked)" class="inline-flex items-center gap-1 text-[11px] text-[#9b9a97]">
                     <svg class="w-3 h-3 text-[#9b9a97]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                     <span>投后解锁票数</span>
                   </span>
@@ -453,7 +448,7 @@
                       v-for="c in (topicComments[topic.id] || [])" 
                       :key="c.id" 
                       class="p-2 bg-white rounded-lg border border-[#e9e9e7] text-xs">
-                      <p class="text-[#2f3437] leading-snug">{{ c.text }}</p>
+                      <p class="text-[#2f3437] leading-snug break-words">{{ c.text }}</p>
                       <span class="text-[10px] text-[#9b9a97] mt-1 block text-right">{{ c.authorName || '同学' }} · {{ formatTime(c.createdAt) }}</span>
                     </div>
                     <div v-if="!topicComments[topic.id] || topicComments[topic.id].length === 0" class="text-center py-2 text-[11px] text-[#9b9a97]">
@@ -538,9 +533,9 @@
               <!-- 主题与进度条 -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between gap-2 mb-1">
-                  <div class="min-w-0">
-                    <h4 class="font-medium text-[#2f3437] text-xs sm:text-sm truncate">{{ getTopicMainTitle(t.title) }}</h4>
-                    <span v-if="getTopicSubTitle(t.title)" class="text-[11px] text-[#787774] truncate block">{{ getTopicSubTitle(t.title) }}</span>
+                  <div class="min-w-0 pr-2">
+                    <h4 class="font-medium text-[#2f3437] text-xs sm:text-sm leading-snug break-words">{{ getTopicMainTitle(t.title) }}</h4>
+                    <span v-if="getTopicSubTitle(t.title)" class="text-[11px] text-[#787774] break-words block mt-0.5">{{ getTopicSubTitle(t.title) }}</span>
                   </div>
                   <span class="text-xs font-semibold text-[#2f3437] shrink-0 font-serif">{{ t.count }} 票 <span class="text-[#787774] font-normal text-[10px]">({{ t.percentage }}%)</span></span>
                 </div>
@@ -748,7 +743,7 @@
             v-for="t in selectedTopics" 
             :key="t.id" 
             class="p-2 bg-[#f7f6f3] rounded-lg border border-[#e9e9e7] text-xs font-medium text-[#2f3437] flex items-center justify-between gap-2">
-            <span class="truncate">{{ getTopicMainTitle(t.title) }}</span>
+            <span class="break-words leading-snug">{{ getTopicMainTitle(t.title) }}</span>
             <span class="text-[10px] text-[#787774] shrink-0">{{ t.category }}</span>
           </div>
         </div>

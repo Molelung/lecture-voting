@@ -33,6 +33,7 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
+      'Connection': 'keep-alive',
       ...CORS_HEADERS,
       ...extraHeaders,
     },
@@ -196,8 +197,8 @@ export default {
           maxVotesPerUser: 3,
           allowChangeVote: true,
           status: 'open',
-          resultsVisibility: 'public'
-        }) : Promise.resolve({ title: '朋辈社课大投票！', resultsVisibility: 'public', status: 'open', maxVotesPerUser: 3 });
+          resultsVisibility: 'after_vote'
+        }) : Promise.resolve({ title: '朋辈社课大投票！', resultsVisibility: 'after_vote', status: 'open', maxVotesPerUser: 3 });
 
         let userVote = null;
         let hasVoted = false;
@@ -278,7 +279,7 @@ export default {
       // 2. GET /api/topics (社课列表与实时票数)
       if (path === '/api/topics' && method === 'GET') {
         const [settings, topics] = await Promise.all([
-          getJsonKV(KV, 'settings', { resultsVisibility: 'public' }),
+          getJsonKV(KV, 'settings', { resultsVisibility: 'after_vote' }),
           getJsonKV(KV, 'topics', [])
         ]);
 
@@ -335,15 +336,15 @@ export default {
         const dur = Date.now() - startTime;
         return jsonResponse({
           success: true,
-          topics: enrichedTopics,
-          locked: !canViewCounts
+          total: enrichedTopics.length,
+          topics: enrichedTopics
         }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
       // 3. GET /api/results (实时热度排行榜)
       if (path === '/api/results' && method === 'GET') {
         const [settings, topics] = await Promise.all([
-          getJsonKV(KV, 'settings', { resultsVisibility: 'public' }),
+          getJsonKV(KV, 'settings', { resultsVisibility: 'after_vote' }),
           getJsonKV(KV, 'topics', [])
         ]);
 
