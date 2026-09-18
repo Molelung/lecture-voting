@@ -127,7 +127,8 @@
             </div>
 
             <div class="bg-white px-3 py-1 rounded-full border border-[#e9e9e7] shadow-2xs">
-              <span>{{ stats.totalVoters || statsSummary.totalVoters || 0 }} 位同学参与 · 共 {{ stats.totalVotesCast || statsSummary.totalVotesCast || 0 }} 票</span>
+              <span v-if="hasVoted">{{ stats.totalVoters || statsSummary.totalVoters || 0 }} 位同学参与 · 共 {{ stats.totalVotesCast || statsSummary.totalVotesCast || 0 }} 票</span>
+              <span v-else>18 门精选社课备选 · 投后揭晓热度榜</span>
             </div>
           </div>
         </div>
@@ -149,7 +150,7 @@
             :class="activeTab === 'results' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
             class="w-1/2 h-full rounded-lg text-xs transition-all duration-200 flex items-center justify-center gap-1.5">
             <span>实时热度榜</span>
-            <svg v-if="!canSeeResults" class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            <svg v-if="!hasVoted" class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
           </button>
         </div>
 
@@ -187,7 +188,7 @@
               :class="activeTab === 'results' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774]'"
               class="flex-1 h-full rounded-lg text-xs transition-all flex items-center justify-center gap-1">
               <span>实时热度榜</span>
-              <svg v-if="!canSeeResults" class="w-2.5 h-2.5 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+              <svg v-if="!hasVoted" class="w-2.5 h-2.5 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
             </button>
           </div>
 
@@ -359,16 +360,17 @@
                 </span>
               </div>
 
-              <!-- 思考抓手一句话摘要 (微缩预览，自然折行不截断) -->
-              <p v-if="topic.hook" class="text-xs text-[#787774] mb-2 leading-relaxed italic break-words">
-                “{{ topic.hook }}”
+              <!-- 思考抓手一句话摘要 (微缩预览，开头【主题】微标与自适应折行) -->
+              <p v-if="topic.hook" class="text-xs text-[#787774] mb-2 leading-relaxed break-words">
+                <span v-if="getHookTag(topic.hook)" class="font-semibold text-[#2f3437] not-italic mr-1">{{ getHookTag(topic.hook) }}</span>
+                <span class="italic">“{{ getHookText(topic.hook) }}”</span>
               </p>
 
               <!-- 底栏状态行：票数状态 + 手风琴展开按钮 -->
               <div class="flex items-center justify-between pt-2 border-t border-[#f0efe9] text-xs">
                 <!-- 票数状态 (未投票时锁定保密，投后即刻解锁) -->
                 <div class="flex items-center gap-1.5">
-                  <span v-if="!canSeeResults || (topic.stats && topic.stats.locked)" class="inline-flex items-center gap-1 text-[11px] text-[#9b9a97]">
+                  <span v-if="!hasVoted" class="inline-flex items-center gap-1 text-[11px] text-[#9b9a97]">
                     <svg class="w-3 h-3 text-[#9b9a97]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                     <span>投后解锁票数</span>
                   </span>
@@ -481,8 +483,8 @@
 
       <!-- ================= 视图 2：实时热度排行榜 (投前锁定 / 投后解锁) ================= -->
       <div v-if="activeTab === 'results'">
-        <!-- 投前锁定保护提示 -->
-        <div v-if="!canSeeResults" class="bg-white rounded-2xl p-8 sm:p-12 text-center border border-[#e9e9e7] shadow-xs max-w-lg mx-auto">
+        <!-- 投前锁定保护提示 (未投票严格锁定) -->
+        <div v-if="!hasVoted" class="bg-white rounded-2xl p-8 sm:p-12 text-center border border-[#e9e9e7] shadow-xs max-w-lg mx-auto">
           <div class="w-10 h-10 rounded-full bg-[#f0efe9] text-[#2f3437] flex items-center justify-center mx-auto mb-3">
             <svg class="w-5 h-5 text-[#2f3437]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
           </div>
