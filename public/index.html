@@ -64,7 +64,7 @@
           </div>
           <div class="flex items-center gap-2 min-w-0">
             <div v-if="loading" class="h-5 w-28 skeleton-shimmer"></div>
-            <span v-else class="font-serif font-semibold text-[#2f3437] text-sm sm:text-base tracking-tight truncate">{{ settings.title || '朋辈社课大投票！' }}</span>
+            <span v-else class="font-serif font-semibold text-[#2f3437] text-sm sm:text-base tracking-tight break-words max-w-[200px] sm:max-w-none">{{ settings.title || '朋辈社课大投票！' }}</span>
             <span v-if="!loading && settings.status === 'open'" class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded shrink-0">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
               <span>征集中</span>
@@ -127,7 +127,7 @@
             </div>
 
             <div class="bg-white px-3 py-1 rounded-full border border-[#e9e9e7] shadow-2xs">
-              <span v-if="hasVoted">{{ stats.totalVoters || statsSummary.totalVoters || 0 }} 位同学参与 · 共 {{ stats.totalVotesCast || statsSummary.totalVotesCast || 0 }} 票</span>
+              <span v-if="canSeeResults">{{ stats.totalVoters || statsSummary.totalVoters || 0 }} 位同学参与 · 共 {{ stats.totalVotesCast || statsSummary.totalVotesCast || 0 }} 票</span>
               <span v-else>18 门精选社课备选 · 投后揭晓热度榜</span>
             </div>
           </div>
@@ -150,7 +150,7 @@
             :class="activeTab === 'results' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774] hover:text-[#2f3437]'"
             class="w-1/2 h-full rounded-lg text-xs transition-all duration-200 flex items-center justify-center gap-1.5">
             <span>实时热度榜</span>
-            <svg v-if="!hasVoted" class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            <svg v-if="!canSeeResults" class="w-3 h-3 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
           </button>
         </div>
 
@@ -188,7 +188,7 @@
               :class="activeTab === 'results' ? 'bg-white text-[#2f3437] shadow-2xs font-semibold' : 'text-[#787774]'"
               class="flex-1 h-full rounded-lg text-xs transition-all flex items-center justify-center gap-1">
               <span>实时热度榜</span>
-              <svg v-if="!hasVoted" class="w-2.5 h-2.5 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+              <svg v-if="!canSeeResults" class="w-2.5 h-2.5 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
             </button>
           </div>
 
@@ -224,8 +224,17 @@
       <div v-if="activeTab === 'vote'" class="sticky top-[49px] sm:top-[53px] z-30 bg-[#fbfbfa]/95 backdrop-blur-md -mx-4 px-4 sm:mx-0 sm:px-0 py-2 sm:py-0 border-b border-[#e9e9e7]/80 sm:border-0 mb-3 sm:mb-4 transition-all">
         <div class="relative flex items-center">
           
-          <!-- 左右平滑滚动分类胶囊条 -->
+          <!-- 加载中分类骨架屏 -->
+          <div v-if="loading" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 w-full">
+            <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
+            <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
+            <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
+            <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
+          </div>
+
+          <!-- 左右平滑滚动分类胶囊条 (数据就绪后呈现) -->
           <div 
+            v-else
             ref="categoryScrollContainer"
             class="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-1 pr-6 sm:pr-0 py-0.5">
             <button 
@@ -274,9 +283,9 @@
 
       <!-- ================= 视图 1：紧凑折叠式社课卡片列表 ================= -->
       <div v-if="activeTab === 'vote'">
-        <!-- 骨架屏加载态：黑色高光线条扫光流动的 Notion 质感卡片 -->
-        <div v-if="loading && topics.length === 0" class="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
-          <div v-for="i in 4" :key="i" class="notion-card p-4 bg-white border border-[#e9e9e7] rounded-xl overflow-hidden shadow-2xs">
+        <!-- 骨架屏加载态：黑色高光线条扫光流动的 Notion 质感卡片 (网络请求中严格展示) -->
+        <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
+          <div v-for="i in 6" :key="i" class="notion-card p-4 bg-white border border-[#e9e9e7] rounded-xl overflow-hidden shadow-2xs">
             <div class="flex items-center justify-between mb-3">
               <div class="flex items-center gap-2">
                 <div class="h-4 w-14 skeleton-shimmer"></div>
@@ -286,9 +295,9 @@
             </div>
             <div class="h-5 w-4/5 skeleton-shimmer mb-2.5"></div>
             <div class="h-3.5 w-1/2 skeleton-shimmer mb-3.5"></div>
-            <div class="h-9 w-full skeleton-shimmer rounded-lg mb-3"></div>
+            <div class="h-8 w-full skeleton-shimmer rounded-lg mb-3"></div>
             <div class="flex items-center justify-between pt-2 border-t border-[#f7f6f3]">
-              <div class="h-3.5 w-16 skeleton-shimmer"></div>
+              <div class="h-3.5 w-20 skeleton-shimmer"></div>
               <div class="h-3.5 w-14 skeleton-shimmer"></div>
             </div>
           </div>
@@ -337,7 +346,7 @@
                   <span class="text-[11px] font-medium text-[#5a5853] bg-[#f0efe9] px-2 py-0.5 rounded shrink-0">
                     {{ topic.category }}
                   </span>
-                  <span class="text-[11px] text-[#787774] truncate">{{ topic.speaker }}</span>
+                  <span class="text-[11px] text-[#787774]">{{ topic.speaker }}</span>
                 </div>
 
                 <!-- 极简复选勾选圈 -->
@@ -370,7 +379,7 @@
               <div class="flex items-center justify-between pt-2 border-t border-[#f0efe9] text-xs">
                 <!-- 票数状态 (未投票时锁定保密，投后即刻解锁) -->
                 <div class="flex items-center gap-1.5">
-                  <span v-if="!hasVoted" class="inline-flex items-center gap-1 text-[11px] text-[#9b9a97]">
+                  <span v-if="!canSeeResults" class="inline-flex items-center gap-1 text-[11px] text-[#9b9a97]">
                     <svg class="w-3 h-3 text-[#9b9a97]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                     <span>投后解锁票数</span>
                   </span>
@@ -464,7 +473,8 @@
                       v-model="newCommentTexts[topic.id]"
                       @keyup.enter="submitQuickComment(topic.id)"
                       type="text" 
-                      placeholder="写下你想听的场景或建议..." 
+                      maxlength="150"
+                      placeholder="写下你想探讨的具体场景或建议..." 
                       class="flex-1 bg-white border border-[#e9e9e7] rounded-lg px-2.5 py-1 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437]">
                     <button 
                       @click="submitQuickComment(topic.id)"
@@ -484,7 +494,7 @@
       <!-- ================= 视图 2：实时热度排行榜 (投前锁定 / 投后解锁) ================= -->
       <div v-if="activeTab === 'results'">
         <!-- 投前锁定保护提示 (未投票严格锁定) -->
-        <div v-if="!hasVoted" class="bg-white rounded-2xl p-8 sm:p-12 text-center border border-[#e9e9e7] shadow-xs max-w-lg mx-auto">
+        <div v-if="!canSeeResults" class="bg-white rounded-2xl p-8 sm:p-12 text-center border border-[#e9e9e7] shadow-xs max-w-lg mx-auto">
           <div class="w-10 h-10 rounded-full bg-[#f0efe9] text-[#2f3437] flex items-center justify-center mx-auto mb-3">
             <svg class="w-5 h-5 text-[#2f3437]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
           </div>
@@ -758,8 +768,9 @@
           <textarea 
             v-model="votingComment"
             rows="2"
+            maxlength="200"
             placeholder="写下你最期待解答的实际困惑或想听的真实案例..."
-            class="w-full bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg p-2 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437]"></textarea>
+            class="w-full bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg p-2 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] resize-none break-words"></textarea>
         </div>
 
         <div class="flex items-center gap-2">
@@ -1326,12 +1337,13 @@
           </div>
 
           <div class="space-y-1">
-            <label class="block font-medium text-[#2f3437]">痛点共鸣金句 (卡片醒目设问 / Hook)</label>
-            <input 
+            <label class="block font-medium text-[#2f3437]">痛点共鸣金句 (卡片醒目设问 / Hook，开头以【主题】微标规范嵌入)</label>
+            <textarea 
               v-model="editingTopic.hook" 
-              type="text" 
-              placeholder="例如：为什么买打折商品反而花得更多？明知沉没成本为何依然死磕？"
-              class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437]">
+              rows="2"
+              maxlength="150"
+              placeholder="例如：【自我疗愈】停止向内攻击与无谓苛责，允许脆弱，是对自己最深沉的关照。"
+              class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-[#fbfbfa] text-[#2f3437] text-xs focus:bg-white focus:outline-none focus:border-[#2f3437] resize-none break-words"></textarea>
           </div>
 
           <div class="space-y-1">

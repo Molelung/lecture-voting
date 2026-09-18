@@ -71,13 +71,13 @@
   transform: translateX(-100%);
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.65) 40%,
-    rgba(47, 52, 55, 0.08) 50%,
-    rgba(255, 255, 255, 0.65) 60%,
-    rgba(255, 255, 255, 0) 100%
+    transparent 0%,
+    rgba(255, 255, 255, 0.55) 28%,
+    rgba(35, 39, 46, 0.14) 50%,
+    rgba(255, 255, 255, 0.55) 72%,
+    transparent 100%
   );
-  animation: shimmer-sweep 1.5s infinite ease-in-out;
+  animation: shimmer-sweep 1.4s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 @keyframes shimmer-sweep {
   0% {
@@ -86,6 +86,13 @@
   100% {
     transform: translateX(100%);
   }
+}
+
+/* 容器防溢出与自然换行规则 (杜绝非预期省略号截断) */
+.break-words {
+  overflow-wrap: break-word !important;
+  word-break: break-word !important;
+  white-space: normal !important;
 }
 
 .skeleton-pill {

@@ -231,8 +231,7 @@ export default {
 
             const canSeeResults = Boolean(
               settings.resultsVisibility === 'public' || 
-              (settings.resultsVisibility === 'after_vote' && hasVoted) || 
-              isAdmin
+              (settings.resultsVisibility === 'after_vote' && hasVoted)
             );
 
             const dur = Date.now() - startTime;
@@ -243,7 +242,7 @@ export default {
               hasVoted,
               userVote,
               canSeeResults,
-              statsSummary: { totalVoters, totalVotesCast }
+              statsSummary: { totalVoters, totalVotesCast: canSeeResults ? totalVotesCast : null }
             }, 200, { 'Server-Timing': `app;dur=${dur}` });
           } catch (d1Err) {
             console.warn('D1 query status fallback to KV:', d1Err.message);
@@ -264,8 +263,7 @@ export default {
 
         const canSeeResults = Boolean(
           settings.resultsVisibility === 'public' || 
-          (settings.resultsVisibility === 'after_vote' && hasVoted) || 
-          isAdmin
+          (settings.resultsVisibility === 'after_vote' && hasVoted)
         );
 
         const dur = Date.now() - startTime;
@@ -276,7 +274,7 @@ export default {
           hasVoted,
           userVote,
           canSeeResults,
-          statsSummary: { totalVoters, totalVotesCast }
+          statsSummary: { totalVoters, totalVotesCast: canSeeResults ? totalVotesCast : null }
         }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
@@ -322,8 +320,7 @@ export default {
 
         const canViewCounts = Boolean(
           settings.resultsVisibility === 'public' || 
-          (settings.resultsVisibility === 'after_vote' && hasVoted) || 
-          isAdmin
+          (settings.resultsVisibility === 'after_vote' && hasVoted)
         );
 
         const enrichedTopics = topics.map(t => {
@@ -384,15 +381,14 @@ export default {
         }
 
         const canViewCounts = settings.resultsVisibility === 'public' || 
-          (settings.resultsVisibility === 'after_vote' && hasVoted) || 
-          isAdmin;
+          (settings.resultsVisibility === 'after_vote' && hasVoted);
 
         if (!canViewCounts) {
           return jsonResponse({
             success: true,
             locked: true,
             message: '投出你的心仪选票后，即刻解锁实时热度排行！',
-            stats: { totalVoters, totalVotesCast, topicStats: [] }
+            stats: { totalVoters, totalVotesCast: null, topicStats: [] }
           });
         }
 

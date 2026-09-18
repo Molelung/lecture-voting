@@ -308,8 +308,7 @@ createApp({
     });
 
     const settings = ref(initialSettings);
-    const initialTopics = getCachedJson('lecture_cached_topics', DEFAULT_INITIAL_TOPICS);
-    const topics = ref(initialTopics);
+    const topics = ref([]);
     const stats = ref({
       totalVoters: 0,
       totalVotesCast: 0,
@@ -444,7 +443,7 @@ createApp({
         initAdminSettingsForm();
         hasVoted.value = res.hasVoted;
         userVote.value = res.userVote;
-        statsSummary.value = res.statsSummary || { totalVoters: 0, totalVotesCast: 0 };
+        statsSummary.value = res.statsSummary || { totalVoters: 0, totalVotesCast: null };
 
         // 如果用户本设备已投过票，回显之前选中的选项
         if (userVote.value && userVote.value.topicIds) {
@@ -460,40 +459,48 @@ createApp({
         // 加载全站公共讨论区留言
         await loadPublicComments();
 
-        // 加载榜单（若已投票或管理员）
+        // 加载榜单（仅在已解锁状态下）
         if (canSeeResults.value) {
           await loadResults();
         }
       } catch (err) {
         console.error('初始化数据异常:', err);
+        // 仅在真实网络离线时安全降级，保证离线可用
+        if (topics.value.length === 0) {
+          topics.value = DEFAULT_INITIAL_TOPICS;
+        }
       } finally {
         loading.value = false;
       }
     };
 
     const loadTopics = async () => {
-      const res = await api('/api/topics');
-      if (res.topics) {
-        topics.value = res.topics;
-        try {
-          localStorage.setItem('lecture_cached_topics', JSON.stringify(res.topics));
-        } catch (e) {}
+      try {
+        const res = await api('/api/topics');
+        if (res.topics && res.topics.length > 0) {
+          topics.value = res.topics;
+        }
+      } catch (e) {
+        if (topics.value.length === 0) {
+          topics.value = DEFAULT_INITIAL_TOPICS;
+        }
       }
     };
 
     const loadResults = async () => {
+      if (!canSeeResults.value) return;
       try {
         const res = await api('/api/results');
-        stats.value = res.stats;
+        if (res.stats) {
+          stats.value = res.stats;
+        }
       } catch (e) {}
     };
 
-    // 榜单可见性计算（严格遵循 settings.resultsVisibility 配置）
+    // 榜单可见性计算（前台学生端严格受投后与公开规则约束，管理员权限不外溢至学生投票主界面）
     const canSeeResults = computed(() => {
       if (settings.value && settings.value.resultsVisibility === 'public') return true;
-      if (settings.value && settings.value.resultsVisibility === 'after_vote') return hasVoted.value;
-      if (settings.value && settings.value.resultsVisibility === 'admin_only') return isAdmin.value;
-      return false;
+      return hasVoted.value;
     });
 
     // 切换卡片折叠展开

@@ -41,7 +41,7 @@ router.get('/status', (req, res) => {
     const fullStats = db.getStatistics();
     stats = {
       totalVoters: fullStats.totalVoters,
-      totalVotesCast: fullStats.totalVotesCast,
+      totalVotesCast: null,
       topicStats: []
     };
   }
@@ -60,7 +60,7 @@ router.get('/status', (req, res) => {
     mobileUrl,
     statsSummary: {
       totalVoters: stats.totalVoters,
-      totalVotesCast: stats.totalVotesCast
+      totalVotesCast: canSeeResults ? stats.totalVotesCast : null
     }
   });
 });
@@ -146,8 +146,7 @@ router.get('/topics', (req, res) => {
   const userVote = user ? db.getUserVote(user.id) : null;
 
   const canSeeResults = settings.resultsVisibility === 'public' || 
-    (settings.resultsVisibility === 'after_vote' && !!userVote) || 
-    (user && user.role === 'admin');
+    (settings.resultsVisibility === 'after_vote' && !!userVote);
 
   const stats = canSeeResults ? db.getStatistics() : null;
   const countMap = {};
@@ -227,8 +226,7 @@ router.get('/results', (req, res) => {
   const userVote = user ? db.getUserVote(user.id) : null;
 
   const canSeeResults = settings.resultsVisibility === 'public' || 
-    (settings.resultsVisibility === 'after_vote' && !!userVote) || 
-    (user && user.role === 'admin');
+    (settings.resultsVisibility === 'after_vote' && !!userVote);
 
   if (!canSeeResults) {
     return res.status(403).json({ 
