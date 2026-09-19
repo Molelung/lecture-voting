@@ -569,7 +569,7 @@
       <!-- ================= 同学留言与期待 (公共交流讨论区) ================= -->
       <section class="mt-12 pt-8 border-t border-[#e9e9e7]">
         <!-- 区域标头 -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <div class="flex items-center gap-2 mb-1">
               <h3 class="text-base sm:text-lg font-bold text-[#2f3437] tracking-tight">同学留言交流</h3>
@@ -581,18 +581,53 @@
               畅谈对社课选题的想法、想听的具体案例或给主讲人的建议
             </p>
           </div>
+        </div>
 
-          <!-- 留言筛选器 -->
-          <div class="w-full sm:w-auto flex items-center gap-1.5 shrink-0">
+        <!-- 留言分类筛选胶囊栏 + 精准社课选择器 (与全站顶部分类条 100% 统一设计系统) -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-5 pb-3 border-b border-[#f0efe9]">
+          <!-- 胶囊分类筛选器 -->
+          <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            <button 
+              v-for="pill in commentCategoryPills" 
+              :key="pill.id"
+              @click="setCommentFilter(pill.id)"
+              :class="commentFilter === pill.id ? 'bg-[#2f3437] text-white font-medium shadow-2xs' : 'bg-white text-[#5a5853] hover:text-[#2f3437] hover:bg-[#f7f6f3] border border-[#e9e9e7]'"
+              class="text-xs h-7.5 px-3 rounded-lg transition-all duration-150 whitespace-nowrap flex items-center gap-1.5 shrink-0 active:scale-95">
+              <span>{{ pill.name }}</span>
+              <span 
+                :class="commentFilter === pill.id ? 'bg-white/20 text-white' : 'bg-[#f0efe9] text-[#787774]'"
+                class="text-[10px] px-1.5 py-0.2 rounded-full font-mono">
+                {{ pill.count }}
+              </span>
+            </button>
+          </div>
+
+          <!-- 精准社课主题下拉选择器 -->
+          <div class="relative w-full sm:w-auto shrink-0">
             <select 
-              v-model="commentFilterTopicId"
-              class="w-full sm:w-auto h-8 bg-white border border-[#e9e9e7] rounded-lg px-2.5 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437] transition shadow-2xs">
-              <option value="all">全部留言 ({{ publicComments.length }})</option>
-              <option value="general">公共交流 / 通用建议</option>
-              <option v-for="t in topics" :key="t.id" :value="t.id">
-                {{ getTopicMainTitle(t.title) }}
-              </option>
+              :value="isTopicSelectedInCommentFilter ? commentFilter : ''"
+              @change="setCommentFilter($event.target.value || 'all')"
+              class="appearance-none w-full sm:w-52 h-7.5 pl-2.5 pr-8 bg-white hover:bg-[#f7f6f3] border border-[#e9e9e7] hover:border-[#2f3437] focus:border-[#2f3437] rounded-lg text-xs text-[#2f3437] font-medium transition cursor-pointer shadow-2xs focus:outline-none">
+              <option value="">按具体社课筛选...</option>
+              <optgroup label="🌱 向内探索 (9门)">
+                <option v-for="t in topics.filter(x => x.category === '向内')" :key="t.id" :value="t.id">
+                  {{ getTopicMainTitle(t.title) }}
+                </option>
+              </optgroup>
+              <optgroup label="🤝 向外连接 (3门)">
+                <option v-for="t in topics.filter(x => x.category === '向外')" :key="t.id" :value="t.id">
+                  {{ getTopicMainTitle(t.title) }}
+                </option>
+              </optgroup>
+              <optgroup label="⚓ 向下扎根 (6门)">
+                <option v-for="t in topics.filter(x => x.category === '向下')" :key="t.id" :value="t.id">
+                  {{ getTopicMainTitle(t.title) }}
+                </option>
+              </optgroup>
             </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-[#787774]">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
           </div>
         </div>
 
@@ -609,16 +644,33 @@
                 placeholder="同学（选填）"
                 class="h-8 flex-1 sm:w-32 bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg px-2.5 text-xs text-[#2f3437] placeholder-[#9b9a97] focus:outline-none focus:border-[#2f3437] focus:bg-white transition">
             </div>
-            <div class="flex items-center gap-1.5 w-full sm:w-auto">
+            <div class="flex items-center gap-1.5 w-full sm:w-auto flex-1">
               <span class="text-xs font-medium text-[#787774] shrink-0 w-16 sm:w-auto">关联社课：</span>
-              <select 
-                v-model="newPublicComment.topicId"
-                class="h-8 flex-1 sm:max-w-xs bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg px-2.5 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437] focus:bg-white transition">
-                <option value="general">公共交流 / 通用建议</option>
-                <option v-for="t in topics" :key="t.id" :value="t.id">
-                  {{ getTopicMainTitle(t.title) }}
-                </option>
-              </select>
+              <div class="relative flex-1 sm:max-w-xs">
+                <select 
+                  v-model="newPublicComment.topicId"
+                  class="appearance-none w-full h-8 pl-2.5 pr-8 bg-[#fbfbfa] hover:bg-white border border-[#e9e9e7] focus:border-[#2f3437] focus:bg-white rounded-lg text-xs text-[#2f3437] focus:outline-none transition cursor-pointer shadow-2xs">
+                  <option value="general">💡 公共交流 / 通用建议</option>
+                  <optgroup label="🌱 向内探索 (9门)">
+                    <option v-for="t in topics.filter(x => x.category === '向内')" :key="t.id" :value="t.id">
+                      {{ getTopicMainTitle(t.title) }}
+                    </option>
+                  </optgroup>
+                  <optgroup label="🤝 向外连接 (3门)">
+                    <option v-for="t in topics.filter(x => x.category === '向外')" :key="t.id" :value="t.id">
+                      {{ getTopicMainTitle(t.title) }}
+                    </option>
+                  </optgroup>
+                  <optgroup label="⚓ 向下扎根 (6门)">
+                    <option v-for="t in topics.filter(x => x.category === '向下')" :key="t.id" :value="t.id">
+                      {{ getTopicMainTitle(t.title) }}
+                    </option>
+                  </optgroup>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-[#787774]">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -660,17 +712,21 @@
                   {{ (c.authorName || '同').slice(0, 1) }}
                 </div>
                 <span class="text-xs font-semibold text-[#2f3437]">{{ c.authorName || '同学' }}</span>
-                <!-- 关联主题标签 -->
-                <span 
+                <!-- 关联主题标签（支持点击快速筛选） -->
+                <button 
                   v-if="c.topicId && c.topicId !== 'general'"
-                  class="text-[10px] font-medium bg-[#f7f6f3] text-[#787774] border border-[#e9e9e7] px-1.5 py-0.5 rounded">
-                  关于：{{ getTopicShortTitle(c.topicId) }}
-                </span>
-                <span 
+                  @click="setCommentFilter(c.topicId)"
+                  class="text-[10px] font-medium bg-[#f7f6f3] hover:bg-[#ebeae5] text-[#787774] hover:text-[#2f3437] border border-[#e9e9e7] px-1.5 py-0.5 rounded transition cursor-pointer flex items-center gap-1"
+                  title="点击筛选该社课的所有留言">
+                  <span>关于：{{ getTopicShortTitle(c.topicId) }}</span>
+                </button>
+                <button 
                   v-else
-                  class="text-[10px] font-medium bg-[#f0efe9] text-[#9b9a97] px-1.5 py-0.5 rounded">
+                  @click="setCommentFilter('general')"
+                  class="text-[10px] font-medium bg-[#f0efe9] hover:bg-[#e4e3dd] text-[#9b9a97] hover:text-[#2f3437] px-1.5 py-0.5 rounded transition cursor-pointer"
+                  title="点击筛选所有公共交流留言">
                   公共交流
-                </span>
+                </button>
               </div>
 
               <div class="flex items-center gap-2 shrink-0">
@@ -704,6 +760,14 @@
           </div>
           <p class="text-xs text-[#787774] font-medium">暂无相关留言</p>
           <p class="text-[11px] text-[#9b9a97] mt-0.5">欢迎在上方输入框写下你的第一个想法或建议</p>
+          <div v-if="commentFilter !== 'all'" class="mt-3">
+            <button 
+              @click="setCommentFilter('all')"
+              class="text-xs text-[#2f3437] font-medium hover:underline inline-flex items-center gap-1">
+              <span>返回查看全部留言</span>
+              <span>→</span>
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1085,15 +1149,32 @@
           <div v-else-if="adminActiveTab === 'comments'" class="overflow-y-auto flex-1 space-y-2.5 pr-1 text-xs">
             <!-- 讨论筛选控制 -->
             <div class="flex items-center justify-between gap-2 pb-1">
-              <select 
-                v-model="adminCommentFilter"
-                class="w-1/3 bg-[#fbfbfa] border border-[#e9e9e7] rounded-lg px-2 py-1.5 text-xs text-[#2f3437] focus:outline-none focus:border-[#2f3437]">
-                <option value="all">全部发言 ({{ publicComments.length }})</option>
-                <option value="general">仅公共交流区</option>
-                <option v-for="t in topics" :key="t.id" :value="t.id">
-                  {{ getTopicShortTitle(t.id) }}
-                </option>
-              </select>
+              <div class="relative w-2/5">
+                <select 
+                  v-model="adminCommentFilter"
+                  class="appearance-none w-full bg-[#fbfbfa] hover:bg-white border border-[#e9e9e7] hover:border-[#2f3437] focus:border-[#2f3437] focus:bg-white rounded-lg pl-2.5 pr-7 py-1.5 text-xs text-[#2f3437] focus:outline-none transition cursor-pointer shadow-2xs">
+                  <option value="all">全部发言 ({{ publicComments.length }})</option>
+                  <option value="general">仅公共交流区</option>
+                  <optgroup label="🌱 向内探索">
+                    <option v-for="t in topics.filter(x => x.category === '向内')" :key="t.id" :value="t.id">
+                      {{ getTopicMainTitle(t.title) }}
+                    </option>
+                  </optgroup>
+                  <optgroup label="🤝 向外连接">
+                    <option v-for="t in topics.filter(x => x.category === '向外')" :key="t.id" :value="t.id">
+                      {{ getTopicMainTitle(t.title) }}
+                    </option>
+                  </optgroup>
+                  <optgroup label="⚓ 向下扎根">
+                    <option v-for="t in topics.filter(x => x.category === '向下')" :key="t.id" :value="t.id">
+                      {{ getTopicMainTitle(t.title) }}
+                    </option>
+                  </optgroup>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-[#787774]">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+              </div>
 
               <input 
                 v-model="adminCommentSearch"
@@ -1161,49 +1242,69 @@
               <div class="grid grid-cols-2 gap-2.5">
                 <div class="space-y-1">
                   <label class="block font-medium text-[#2f3437]">每人可选社课数</label>
-                  <select 
-                    v-model.number="adminSettingsForm.maxVotesPerUser"
-                    class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-white text-[#2f3437] text-xs focus:outline-none">
-                    <option :value="1">每人限选 1 门</option>
-                    <option :value="2">每人至多 2 门</option>
-                    <option :value="3">每人至多 3 门 (推荐)</option>
-                    <option :value="4">每人至多 4 门</option>
-                    <option :value="5">每人至多 5 门</option>
-                  </select>
+                  <div class="relative">
+                    <select 
+                      v-model.number="adminSettingsForm.maxVotesPerUser"
+                      class="appearance-none w-full pl-2.5 pr-8 py-2 bg-white hover:border-[#2f3437] border border-[#e9e9e7] focus:border-[#2f3437] rounded-lg text-xs text-[#2f3437] focus:outline-none transition cursor-pointer shadow-2xs">
+                      <option :value="1">每人限选 1 门</option>
+                      <option :value="2">每人至多 2 门</option>
+                      <option :value="3">每人至多 3 门 (推荐)</option>
+                      <option :value="4">每人至多 4 门</option>
+                      <option :value="5">每人至多 5 门</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-[#787774]">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="space-y-1">
                   <label class="block font-medium text-[#2f3437]">投票开放状态</label>
-                  <select 
-                    v-model="adminSettingsForm.status"
-                    class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-white text-[#2f3437] text-xs focus:outline-none">
-                    <option value="open">🟢 正常开放投票</option>
-                    <option value="paused">🟡 临时暂停投票</option>
-                    <option value="closed">🔴 正式截止锁定</option>
-                  </select>
+                  <div class="relative">
+                    <select 
+                      v-model="adminSettingsForm.status"
+                      class="appearance-none w-full pl-2.5 pr-8 py-2 bg-white hover:border-[#2f3437] border border-[#e9e9e7] focus:border-[#2f3437] rounded-lg text-xs text-[#2f3437] focus:outline-none transition cursor-pointer shadow-2xs">
+                      <option value="open">🟢 正常开放投票</option>
+                      <option value="paused">🟡 临时暂停投票</option>
+                      <option value="closed">🔴 正式截止锁定</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-[#787774]">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                  </div>
                 </div>
               </div>
 
               <div class="grid grid-cols-2 gap-2.5">
                 <div class="space-y-1">
                   <label class="block font-medium text-[#2f3437]">榜单公开规则</label>
-                  <select 
-                    v-model="adminSettingsForm.resultsVisibility"
-                    class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-white text-[#2f3437] text-xs focus:outline-none">
-                    <option value="public">全员公开实时榜单</option>
-                    <option value="after_vote">投出选票后才解锁</option>
-                    <option value="admin_only">仅管理员可见榜单</option>
-                  </select>
+                  <div class="relative">
+                    <select 
+                      v-model="adminSettingsForm.resultsVisibility"
+                      class="appearance-none w-full pl-2.5 pr-8 py-2 bg-white hover:border-[#2f3437] border border-[#e9e9e7] focus:border-[#2f3437] rounded-lg text-xs text-[#2f3437] focus:outline-none transition cursor-pointer shadow-2xs">
+                      <option value="public">全员公开实时榜单</option>
+                      <option value="after_vote">投出选票后才解锁</option>
+                      <option value="admin_only">仅管理员可见榜单</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-[#787774]">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="space-y-1">
                   <label class="block font-medium text-[#2f3437]">选民改票权限</label>
-                  <select 
-                    v-model="adminSettingsForm.allowChangeVote"
-                    class="w-full border border-[#e9e9e7] rounded-lg p-2 bg-white text-[#2f3437] text-xs focus:outline-none">
-                    <option :value="true">允许修改已投选票</option>
-                    <option :value="false">禁止修改（一票定音）</option>
-                  </select>
+                  <div class="relative">
+                    <select 
+                      v-model="adminSettingsForm.allowChangeVote"
+                      class="appearance-none w-full pl-2.5 pr-8 py-2 bg-white hover:border-[#2f3437] border border-[#e9e9e7] focus:border-[#2f3437] rounded-lg text-xs text-[#2f3437] focus:outline-none transition cursor-pointer shadow-2xs">
+                      <option :value="true">允许修改已投选票</option>
+                      <option :value="false">禁止修改（一票定音）</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-[#787774]">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                  </div>
                 </div>
               </div>
 

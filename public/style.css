@@ -99,6 +99,17 @@
   border-radius: 9999px !important;
 }
 
+/* 全局统一 Notion 风格表单选择器重置 (杜绝系统默认灰色方框与粗笨箭头) */
+select.appearance-none {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-image: none !important;
+}
+select.appearance-none::-ms-expand {
+  display: none !important;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-page);

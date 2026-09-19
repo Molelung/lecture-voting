@@ -335,7 +335,8 @@ createApp({
     // 公共社区讨论留言板状态 (随时自由留言，无需投票即可畅所欲言)
     const publicComments = ref([]);
     const publicCommentsLoading = ref(false);
-    const commentFilterTopicId = ref('all'); // 'all' | 'general' | specific topicId
+    const commentFilter = ref('all'); // 'all' | 'general' | 'cat:向内' | 'cat:向外' | 'cat:向下' | 'topic-X'
+    const commentFilterTopicId = commentFilter; // 保持兼容别名
     const newPublicComment = ref({
       authorName: '',
       topicId: 'general',
@@ -543,6 +544,8 @@ createApp({
         topicComments.value[topicId].unshift(res.comment);
         newCommentTexts.value[topicId] = '';
         showToast('心愿留言已发布！', 'success');
+        // 实时触发全站公共留言池静默同步
+        loadPublicComments();
       } catch (e) {
         showToast(e.message, 'error');
       }
@@ -560,12 +563,62 @@ createApp({
       return `${d.getMonth() + 1}月${d.getDate()}日`;
     };
 
-    // 公共留言筛选计算
-    const filteredPublicComments = computed(() => {
-      if (commentFilterTopicId.value === 'all') {
-        return publicComments.value;
+    // 计算各分类留言数量
+    const commentCategoryCounts = computed(() => {
+      const counts = {
+        all: publicComments.value.length,
+        general: 0,
+        inward: 0,
+        outward: 0,
+        downward: 0
+      };
+      const topicCatMap = new Map(topics.value.map(t => [t.id, t.category]));
+      for (const c of publicComments.value) {
+        if (!c.topicId || c.topicId === 'general') {
+          counts.general++;
+        } else {
+          const cat = topicCatMap.get(c.topicId);
+          if (cat === '向内') counts.inward++;
+          else if (cat === '向外') counts.outward++;
+          else if (cat === '向下') counts.downward++;
+        }
       }
-      return publicComments.value.filter(c => (c.topicId || 'general') === commentFilterTopicId.value);
+      return counts;
+    });
+
+    // 留言区胶囊分类条（与顶部社课胶囊 100% 统一设计系统）
+    const commentCategoryPills = computed(() => [
+      { id: 'all', name: '全部', count: commentCategoryCounts.value.all },
+      { id: 'general', name: '公共交流', count: commentCategoryCounts.value.general },
+      { id: 'cat:向内', name: '向内', count: commentCategoryCounts.value.inward },
+      { id: 'cat:向外', name: '向外', count: commentCategoryCounts.value.outward },
+      { id: 'cat:向下', name: '向下', count: commentCategoryCounts.value.downward }
+    ]);
+
+    // 判断当前下拉选框是否处于具体社课选中态
+    const isTopicSelectedInCommentFilter = computed(() => {
+      return (commentFilter.value || '').startsWith('topic-');
+    });
+
+    // 切换留言筛选
+    const setCommentFilter = (filterId) => {
+      commentFilter.value = filterId || 'all';
+      triggerHaptic('light');
+    };
+
+    // 筛选后展现的公共留言流
+    const filteredPublicComments = computed(() => {
+      const f = commentFilter.value;
+      if (!f || f === 'all') return publicComments.value;
+      if (f === 'general') {
+        return publicComments.value.filter(c => !c.topicId || c.topicId === 'general');
+      }
+      if (f.startsWith('cat:')) {
+        const cat = f.replace('cat:', '');
+        const topicCatMap = new Map(topics.value.map(t => [t.id, t.category]));
+        return publicComments.value.filter(c => c.topicId && topicCatMap.get(c.topicId) === cat);
+      }
+      return publicComments.value.filter(c => c.topicId === f);
     });
 
     // 获取议题简称
@@ -1409,7 +1462,11 @@ createApp({
       newCommentTexts,
       publicComments,
       publicCommentsLoading,
+      commentFilter,
       commentFilterTopicId,
+      commentCategoryPills,
+      isTopicSelectedInCommentFilter,
+      setCommentFilter,
       filteredPublicComments,
       newPublicComment,
       submittingPublicComment,
