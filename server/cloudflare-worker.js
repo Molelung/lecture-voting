@@ -506,9 +506,10 @@ const STATIC_ORIGIN = 'https://molelung.github.io/lecture-voting';
 const STATIC_ENTRY_TTL = 604800; // 边缘缓存条目存活 7 天（条目活得久，源站故障才有兜底副本）
 
 // 新鲜度窗口：超过窗口才回源校验，避免每次访问都打到 GitHub
+// 图片/第三方库也给 10 分钟窗口，改图后不用等太久就能全网生效
 function staticFreshWindow(path) {
-  if (path.startsWith('/vendor/')) return 3600;
-  if (/\.(png|jpe?g|gif|webp|svg|ico|woff2?)$/i.test(path)) return 3600;
+  if (path.startsWith('/vendor/')) return 600;
+  if (/\.(png|jpe?g|gif|webp|svg|ico|woff2?)$/i.test(path)) return 600;
   return 60; // html / js / css：60 秒后回源校验，部署一分钟内全量生效
 }
 
@@ -578,8 +579,10 @@ async function serveStaticAsset(request, ctx, path) {
   const isHead = request.method === 'HEAD';
   const fresh = staticFreshWindow(path);
   const cache = caches.default;
-  // 固定缓存键：两个接入域名共用同一份边缘副本
-  const cacheKey = new Request('https://static.lecture-voting.internal' + path, { method: 'GET' });
+  // 缓存键 = 当前域名的请求地址（去掉查询串）：既能让两个接入域名各自可被按 URL 清除缓存，
+  // 也不会因为 ?cb=123 这类参数产生无用副本
+  const reqUrl = new URL(request.url);
+  const cacheKey = new Request(reqUrl.origin + reqUrl.pathname, { method: 'GET' });
 
   let cached = null;
   try { cached = await cache.match(cacheKey); } catch (e) {}
