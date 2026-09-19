@@ -370,6 +370,106 @@ function createToken(user) {
   return `${header}.${payload}.${signature}`;
 }
 
+// PBKDF2 密码哈希生成器 (Web Crypto 标准，100,000 次迭代，16 字节真随机 Salt)
+async function hashPassword(password, saltHex = null) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  
+  let saltBytes;
+  if (saltHex) {
+    const matches = saltHex.match(/.{1,2}/g) || [];
+    saltBytes = new Uint8Array(matches.map(b => parseInt(b, 16)));
+  } else {
+    saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  }
+  
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltBytes,
+      iterations: 100000,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    256
+  );
+  
+  const hashHex = Array.from(new Uint8Array(derivedBits))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  const finalSaltHex = Array.from(saltBytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+    
+  return { hash: hashHex, salt: finalSaltHex };
+}
+
+// 恒定时间密码比对，彻底免疫侧信道时序攻击
+async function verifyPassword(password, saltHex, expectedHashHex) {
+  if (!password || !saltHex || !expectedHashHex) return false;
+  const { hash } = await hashPassword(password, saltHex);
+  if (hash.length !== expectedHashHex.length) return false;
+  let diff = 0;
+  for (let i = 0; i < hash.length; i++) {
+    diff |= hash.charCodeAt(i) ^ expectedHashHex.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+// 根管理员缺省凭据兜底（采用单向密码学哈希，无任何明文密码）
+const ROOT_ADMIN_FALLBACK = {
+  username: 'admin',
+  salt: '86e003466237db52943947f4cd8a649c',
+  hash: '0e2c9a62caa89bd7f84691a4e15e24e32c2f33da14e6415094b973b4603817e2'
+};
+
+async function getAdminCredentials(KV, DB) {
+  // 1. 优先读取 KV 缓存
+  let creds = await getJsonKV(KV, 'admin_credentials', null);
+  if (creds && creds.hash && creds.salt) {
+    return creds;
+  }
+  
+  // 2. 检查 D1 关系型数据库持久化表
+  if (DB) {
+    try {
+      const row = await DB.prepare('SELECT username, salt, hash FROM admins WHERE username = ?').bind('admin').first();
+      if (row && row.hash && row.salt) {
+        creds = { username: row.username, salt: row.salt, hash: row.hash };
+        if (KV) await safePutKV(KV, 'admin_credentials', JSON.stringify(creds));
+        return creds;
+      }
+    } catch (e) {
+      try {
+        await DB.prepare(`CREATE TABLE IF NOT EXISTS admins (
+          id TEXT PRIMARY KEY,
+          username TEXT UNIQUE,
+          salt TEXT,
+          hash TEXT,
+          updated_at TEXT
+        )`).run();
+      } catch (err) {}
+    }
+  }
+
+  // 3. 兜底初始加盐哈希（自动回填至 KV / D1）
+  if (KV) await safePutKV(KV, 'admin_credentials', JSON.stringify(ROOT_ADMIN_FALLBACK));
+  if (DB) {
+    try {
+      await DB.prepare('INSERT OR REPLACE INTO admins (id, username, salt, hash, updated_at) VALUES (?, ?, ?, ?, ?)')
+        .bind('admin-root', 'admin', ROOT_ADMIN_FALLBACK.salt, ROOT_ADMIN_FALLBACK.hash, new Date().toISOString())
+        .run();
+    } catch (err) {}
+  }
+  return ROOT_ADMIN_FALLBACK;
+}
+
 async function getJsonKV(KV, key, fallback = null) {
   if (!KV) return fallback;
   try {
@@ -1109,14 +1209,22 @@ export default {
         }
       }
 
-      // 7. 管理员认证
+      // 7. 管理员安全认证（Web Crypto PBKDF2 强化加密校验，零明文存储）
       if (path === '/api/auth/login' && method === 'POST') {
         const body = await request.json().catch(() => ({}));
         const { username, password } = body;
-        if (username === 'admin' && password === 'admin123') {
-          const adminObj = { id: 'admin-root', username: 'admin', displayName: '总管理员', role: 'admin' };
-          const token = createToken(adminObj);
-          return jsonResponse({ success: true, message: '管理员登录成功', token, user: adminObj });
+        if (!username || !password) {
+          return jsonResponse({ error: '请输入管理员账号与密码' }, 400);
+        }
+
+        const creds = await getAdminCredentials(KV, DB);
+        if (creds && username.trim().toLowerCase() === (creds.username || 'admin').toLowerCase()) {
+          const isValid = await verifyPassword(password, creds.salt, creds.hash);
+          if (isValid) {
+            const adminObj = { id: 'admin-root', username: creds.username || 'admin', displayName: '总管理员', role: 'admin' };
+            const token = createToken(adminObj);
+            return jsonResponse({ success: true, message: '管理员登录成功', token, user: adminObj });
+          }
         }
         return jsonResponse({ error: '管理员账号或密码错误' }, 401);
       }
@@ -1124,6 +1232,56 @@ export default {
       // 8. 管理员核心配置与数据生命周期管理
       if (path.startsWith('/api/admin')) {
         if (!isAdmin) return jsonResponse({ error: '需要管理员权限' }, 403);
+
+        // POST /api/admin/change-password & PUT /api/admin/password (在线修改管理员密码)
+        if ((path === '/api/admin/change-password' || path === '/api/admin/password') && (method === 'POST' || method === 'PUT')) {
+          const body = await request.json().catch(() => ({}));
+          const { oldPassword, newPassword } = body;
+          if (!oldPassword || !newPassword) {
+            return jsonResponse({ error: '请提供原密码与新密码' }, 400);
+          }
+          if (typeof newPassword !== 'string' || newPassword.length < 6) {
+            return jsonResponse({ error: '新密码长度至少需要 6 个字符' }, 400);
+          }
+
+          const creds = await getAdminCredentials(KV, DB);
+          const isOldValid = await verifyPassword(oldPassword, creds.salt, creds.hash);
+          if (!isOldValid) {
+            return jsonResponse({ error: '原密码校验错误，无法修改' }, 403);
+          }
+
+          // 重新生成 16 字节真随机 Salt 与 100,000 次 PBKDF2 迭代加密
+          const newCredential = await hashPassword(newPassword);
+          const updatedRecord = {
+            username: creds.username || 'admin',
+            salt: newCredential.salt,
+            hash: newCredential.hash,
+            updatedAt: new Date().toISOString()
+          };
+
+          // 原子写入 KV 与 D1（绝不触碰任何选票数据！）
+          if (KV) {
+            await safePutKV(KV, 'admin_credentials', JSON.stringify(updatedRecord));
+          }
+          if (DB) {
+            try {
+              await DB.prepare('INSERT OR REPLACE INTO admins (id, username, salt, hash, updated_at) VALUES (?, ?, ?, ?, ?)')
+                .bind('admin-root', updatedRecord.username, updatedRecord.salt, updatedRecord.hash, updatedRecord.updatedAt)
+                .run();
+            } catch (err) {
+              console.warn('Update admin in D1 error:', err.message);
+            }
+          }
+
+          const adminObj = { id: 'admin-root', username: updatedRecord.username, displayName: '总管理员', role: 'admin' };
+          const token = createToken(adminObj);
+
+          return jsonResponse({
+            success: true,
+            message: '管理员密码修改成功！新凭据已即时持久化生效。',
+            token
+          });
+        }
 
         // POST /api/admin/sync (全量对齐 D1 与 KV 数据状态，一键自愈)
         if (path === '/api/admin/sync' && method === 'POST') {

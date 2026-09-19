@@ -493,34 +493,35 @@
 
       <!-- ================= 视图 2：实时热度排行榜 (投前锁定 / 投后解锁) ================= -->
       <div v-if="activeTab === 'results'">
-        <!-- 投前锁定保护提示 (未投票严格锁定) -->
-        <div v-if="!canSeeResults" class="bg-white rounded-2xl p-8 sm:p-12 text-center border border-[#e9e9e7] shadow-xs max-w-lg mx-auto">
-          <div class="w-10 h-10 rounded-full bg-[#f0efe9] text-[#2f3437] flex items-center justify-center mx-auto mb-3">
-            <svg class="w-5 h-5 text-[#2f3437]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-          </div>
-          <h3 class="font-serif text-base font-bold text-[#2f3437] mb-1.5">实时热度榜评选中</h3>
-          <p class="text-xs text-[#787774] leading-relaxed mb-5">
-            为防止从众心理影响独立判断，当前榜单处于保密锁定态。投出你的心仪选票后，将立即为您揭晓全部议题实时票数与开讲排序！
-          </p>
-          <button 
-            @click="activeTab = 'vote'; triggerHaptic('medium')"
-            class="bg-[#2f3437] hover:bg-[#18181b] text-white py-2 px-6 rounded-full text-xs font-semibold shadow-xs transition">
-            前往挑选议题并投票 →
-          </button>
-        </div>
-
-        <!-- 投后已解锁完整榜单 -->
-        <div v-else class="bg-white rounded-2xl p-5 sm:p-8 border border-[#e9e9e7] shadow-xs">
+        <!-- 榜单头部 -->
+        <div class="bg-white rounded-2xl p-5 sm:p-8 border border-[#e9e9e7] shadow-xs">
           <div class="flex items-center justify-between mb-4">
             <div>
               <h3 class="font-serif text-base font-bold text-[#2f3437]">社课议题热度排行</h3>
-              <p class="text-xs text-[#787774]">每张选票实时计入，前 3 名将优先排期开讲</p>
+              <p class="text-xs text-[#787774]" v-if="canSeeResults">每张选票实时计入，前 3 名将优先排期开讲</p>
+              <p class="text-xs text-[#787774]" v-else>投出选票后即可查看各议题实时票数与排名</p>
             </div>
             <button 
               @click="loadResults" 
               class="notion-action-btn text-xs py-1 px-2.5 rounded-lg text-[#787774] hover:text-[#2f3437] flex items-center gap-1">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
               <span>刷新</span>
+            </button>
+          </div>
+
+          <!-- 未投票时的提示条 -->
+          <div v-if="!canSeeResults" class="mb-4 p-3 bg-[#f7f6f3] rounded-xl border border-[#e9e9e7] flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-[#f0efe9] text-[#2f3437] flex items-center justify-center shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-xs font-medium text-[#2f3437]">票数处于保密锁定态</p>
+              <p class="text-[11px] text-[#787774]">为防从众心理影响独立判断，投票后方可查看各议题实时得票数</p>
+            </div>
+            <button 
+              @click="activeTab = 'vote'; triggerHaptic('medium')"
+              class="bg-[#2f3437] hover:bg-[#18181b] text-white py-1.5 px-3.5 rounded-full text-xs font-medium shadow-xs transition shrink-0">
+              去投票 →
             </button>
           </div>
 
@@ -533,13 +534,13 @@
               <!-- 序号 -->
               <div 
                 :class="[
-                  idx === 0 ? 'bg-[#2f3437] text-white font-serif font-bold' :
-                  idx === 1 ? 'bg-[#5a5853] text-white font-serif font-medium' :
-                  idx === 2 ? 'bg-[#787774] text-white font-serif font-medium' :
+                  canSeeResults && idx === 0 ? 'bg-[#2f3437] text-white font-serif font-bold' :
+                  canSeeResults && idx === 1 ? 'bg-[#5a5853] text-white font-serif font-medium' :
+                  canSeeResults && idx === 2 ? 'bg-[#787774] text-white font-serif font-medium' :
                   'bg-[#f0efe9] text-[#787774] font-serif'
                 ]"
                 class="w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0">
-                {{ idx + 1 }}
+                {{ canSeeResults ? idx + 1 : '—' }}
               </div>
 
               <!-- 主题与进度条 -->
@@ -549,10 +550,15 @@
                     <h4 class="font-medium text-[#2f3437] text-xs sm:text-sm leading-snug break-words">{{ getTopicMainTitle(t.title) }}</h4>
                     <span v-if="getTopicSubTitle(t.title)" class="text-[11px] text-[#787774] break-words block mt-0.5">{{ getTopicSubTitle(t.title) }}</span>
                   </div>
-                  <span class="text-xs font-semibold text-[#2f3437] shrink-0 font-serif">{{ t.count }} 票 <span class="text-[#787774] font-normal text-[10px]">({{ t.percentage }}%)</span></span>
+                  <span v-if="canSeeResults" class="text-xs font-semibold text-[#2f3437] shrink-0 font-serif">{{ t.count }} 票 <span class="text-[#787774] font-normal text-[10px]">({{ t.percentage }}%)</span></span>
+                  <span v-else class="inline-flex items-center gap-1 text-[11px] text-[#9b9a97] shrink-0">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    <span>投后可见</span>
+                  </span>
                 </div>
                 <div class="w-full bg-[#e9e9e7] h-1.5 rounded-full overflow-hidden">
                   <div 
+                    v-if="canSeeResults"
                     class="bg-[#2f3437] h-full rounded-full transition-all duration-500"
                     :style="{ width: t.percentage + '%' }">
                   </div>
@@ -771,13 +777,10 @@
         </div>
       </section>
 
-      <!-- 极简学术底栏 (Editorial Footer) -->
+      <!-- 极简学术底栏 -->
       <footer class="mt-14 pt-8 pb-4 border-t border-[#e9e9e7] text-center">
-        <p class="text-xs font-medium text-[#787774] mb-1">
-          朋辈心理学社 · 智性共读与朋辈成长
-        </p>
-        <p class="text-[11px] text-[#9b9a97]">
-          关注真实困惑 · 坚守循证逻辑 · 启发深度思考
+        <p class="text-xs font-medium text-[#787774]">
+          朋辈学生组织
         </p>
       </footer>
     </main>
@@ -877,12 +880,12 @@
             <input 
               v-model="adminLoginForm.username" 
               type="text" 
-              placeholder="管理员账号 (admin)" 
+              placeholder="管理员账号" 
               class="w-full border border-[#e9e9e7] rounded-lg p-2.5 bg-[#fbfbfa] text-[#2f3437] focus:bg-white focus:outline-none focus:border-[#2f3437]">
             <input 
               v-model="adminLoginForm.password" 
               type="password" 
-              placeholder="密码 (admin123)" 
+              placeholder="请输入管理员密码" 
               class="w-full border border-[#e9e9e7] rounded-lg p-2.5 bg-[#fbfbfa] text-[#2f3437] focus:bg-white focus:outline-none focus:border-[#2f3437]">
             <button type="submit" class="w-full bg-[#2f3437] hover:bg-[#18181b] text-white py-2.5 rounded-lg font-medium text-xs transition shadow-xs">
               登录管理后台
@@ -1366,6 +1369,57 @@
                   <input type="file" accept=".json" @change="restoreFromJsonFile" class="hidden">
                 </label>
               </div>
+            </div>
+
+            <!-- 管理员密码与安全凭据修改 -->
+            <div class="bg-[#fbfbfa] p-3.5 rounded-xl border border-[#e9e9e7] space-y-2.5">
+              <div class="flex items-center justify-between pb-1 border-b border-[#e9e9e7]">
+                <span class="font-serif font-bold text-xs text-[#2f3437]">管理员密码与安全凭据</span>
+                <span class="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">PBKDF2 加密保护</span>
+              </div>
+              <p class="text-[11px] text-[#787774] leading-relaxed">
+                修改后新密码将即时以 10 万次加盐哈希写入持久化存储，源码与网络传输绝不留存任何明文。
+              </p>
+              
+              <form @submit.prevent="handleChangeAdminPassword" class="space-y-2 pt-1">
+                <div>
+                  <label class="block text-[11px] font-medium text-[#2f3437] mb-1">当前原密码</label>
+                  <input 
+                    v-model="adminPasswordForm.oldPassword" 
+                    type="password" 
+                    placeholder="请输入当前原密码" 
+                    required
+                    class="w-full border border-[#e9e9e7] rounded-lg px-2.5 py-1.5 bg-white text-[#2f3437] text-xs focus:outline-none focus:border-[#2f3437]">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="block text-[11px] font-medium text-[#2f3437] mb-1">新密码</label>
+                    <input 
+                      v-model="adminPasswordForm.newPassword" 
+                      type="password" 
+                      placeholder="至少 6 位新密码" 
+                      required
+                      class="w-full border border-[#e9e9e7] rounded-lg px-2.5 py-1.5 bg-white text-[#2f3437] text-xs focus:outline-none focus:border-[#2f3437]">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-[#2f3437] mb-1">确认新密码</label>
+                    <input 
+                      v-model="adminPasswordForm.confirmPassword" 
+                      type="password" 
+                      placeholder="重复输入新密码" 
+                      required
+                      class="w-full border border-[#e9e9e7] rounded-lg px-2.5 py-1.5 bg-white text-[#2f3437] text-xs focus:outline-none focus:border-[#2f3437]">
+                  </div>
+                </div>
+                <div class="pt-1 flex justify-end">
+                  <button 
+                    type="submit" 
+                    :disabled="changingAdminPassword"
+                    class="py-1.5 px-3 rounded-lg bg-[#2f3437] text-white font-medium text-xs hover:bg-black transition shadow-2xs disabled:opacity-50">
+                    {{ changingAdminPassword ? '正在更新凭据...' : '确认修改密码' }}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

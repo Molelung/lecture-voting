@@ -234,8 +234,9 @@ const DEFAULT_TOPICS = [
 
 // 初始化默认数据
 function getInitialData() {
-  const salt = bcrypt.genSaltSync(10);
-  const adminPasswordHash = bcrypt.hashSync('admin123', salt);
+  // 支持由环境变量注入，或采用安全单向散列加盐存储，源码零明文硬编码
+  const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH || 
+    (process.env.ADMIN_PASSWORD ? bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10) : '$2b$10$OF5zMsT5T2XG3uJ1n/SJo.507TZ8fUzC/6MzQaCq8wBRr1HqTEPh2');
 
   return {
     settings: {

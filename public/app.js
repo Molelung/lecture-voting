@@ -65,6 +65,8 @@ createApp({
     const showAdminModal = ref(false);
     const adminActiveTab = ref('topics'); // 'topics' | 'settings' | 'ballots' | 'comments'
     const adminLoginForm = ref({ username: 'admin', password: '' });
+    const adminPasswordForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' });
+    const changingAdminPassword = ref(false);
     const ballots = ref([]);
     const ballotSearchQuery = ref('');
     const adminTopicSearchQuery = ref('');
@@ -568,10 +570,8 @@ createApp({
         // 加载全站公共讨论区留言
         await loadPublicComments();
 
-        // 加载榜单（仅在已解锁状态下）
-        if (canSeeResults.value) {
-          await loadResults();
-        }
+        // 加载榜单（始终加载标题，票数由前端按投票状态控制可见性）
+        await loadResults();
       } catch (err) {
         console.error('初始化数据异常:', err);
         // 仅在真实网络离线时安全降级，保证离线可用
@@ -597,7 +597,6 @@ createApp({
     };
 
     const loadResults = async () => {
-      if (!canSeeResults.value) return;
       try {
         const res = await api('/api/results');
         if (res.stats) {
@@ -1266,6 +1265,41 @@ createApp({
       showToast('已安全登出管理后台', 'info');
     };
 
+    // 在线修改管理员密码（安全双重校验）
+    const handleChangeAdminPassword = async () => {
+      const { oldPassword, newPassword, confirmPassword } = adminPasswordForm.value;
+      if (!oldPassword) {
+        showToast('请输入当前原密码', 'warning');
+        return;
+      }
+      if (!newPassword || newPassword.length < 6) {
+        showToast('新密码长度不能少于 6 个字符', 'warning');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        showToast('两次输入的新密码不一致，请核对', 'warning');
+        return;
+      }
+
+      changingAdminPassword.value = true;
+      try {
+        const res = await api('/api/admin/change-password', {
+          method: 'POST',
+          body: JSON.stringify({ oldPassword, newPassword })
+        });
+        if (res.token) {
+          adminToken.value = res.token;
+          localStorage.setItem('lecture_admin_token', res.token);
+        }
+        adminPasswordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' };
+        showToast(res.message || '管理员密码修改成功！新凭据已即时生效', 'success');
+      } catch (e) {
+        showToast(e.message || '修改密码失败，请核对原密码', 'error');
+      } finally {
+        changingAdminPassword.value = false;
+      }
+    };
+
     const loadBallots = async () => {
       try {
         const res = await api('/api/admin/ballots');
@@ -1694,6 +1728,9 @@ createApp({
       openAdminModal,
       handleAdminLogin,
       handleAdminLogout,
+      adminPasswordForm,
+      changingAdminPassword,
+      handleChangeAdminPassword,
       loadBallots,
       clearVotes,
       exportCsv,

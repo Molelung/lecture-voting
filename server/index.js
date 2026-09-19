@@ -39,7 +39,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`社课投票网站服务已成功启动！`);
   console.log(`> 本地访问地址: http://localhost:${PORT}`);
   console.log(`> 局域网/手机扫码: http://<你的局域网IP>:${PORT}`);
-  console.log(`> 默认管理员账号: admin / admin123`);
+  console.log(`> 默认管理员账号: admin（密码请通过环境变量 ADMIN_PASSWORD 设置或在管理后台修改）`);
   console.log(`====================================================`);
 });
 
