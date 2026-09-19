@@ -18,27 +18,34 @@ function getLocalIp() {
 
 const router = express.Router();
 
+function getEffectiveVoterId(req) {
+  if (req.user && req.user.id) return req.user.id;
+  return req.headers['x-voter-token'] || (req.body && req.body.voterToken) || req.query.voterToken || null;
+}
+
 // 1. 获取全局系统状态与当前用户状态
 router.get('/status', (req, res) => {
   const settings = db.getSettings();
+  const voterId = getEffectiveVoterId(req);
   const user = req.user;
   let userVote = null;
 
-  if (user) {
-    userVote = db.getUserVote(user.id);
+  if (voterId) {
+    userVote = db.getUserVote(voterId);
   }
 
+  const hasVoted = !!userVote;
   // 检查是否显示票数统计
   const canSeeResults = settings.resultsVisibility === 'public' || 
-    (settings.resultsVisibility === 'after_vote' && !!userVote) || 
+    (settings.resultsVisibility === 'after_vote' && hasVoted) || 
     (user && user.role === 'admin');
 
   let stats = null;
+  const fullStats = db.getStatistics();
   if (canSeeResults) {
-    stats = db.getStatistics();
+    stats = fullStats;
   } else {
     // 隐藏具体票数，只返回参与人数概要
-    const fullStats = db.getStatistics();
     stats = {
       totalVoters: fullStats.totalVoters,
       totalVotesCast: null,
@@ -55,6 +62,7 @@ router.get('/status', (req, res) => {
     settings,
     user,
     userVote,
+    hasVoted,
     canSeeResults,
     localIp,
     mobileUrl,
@@ -142,11 +150,13 @@ router.post('/auth/login', (req, res) => {
 router.get('/topics', (req, res) => {
   const topics = db.getTopics();
   const settings = db.getSettings();
-  const user = req.user;
-  const userVote = user ? db.getUserVote(user.id) : null;
+  const voterId = getEffectiveVoterId(req);
+  const userVote = voterId ? db.getUserVote(voterId) : null;
+  const hasVoted = !!userVote;
 
   const canSeeResults = settings.resultsVisibility === 'public' || 
-    (settings.resultsVisibility === 'after_vote' && !!userVote);
+    (settings.resultsVisibility === 'after_vote' && hasVoted) ||
+    (req.user && req.user.role === 'admin');
 
   const stats = canSeeResults ? db.getStatistics() : null;
   const countMap = {};
@@ -170,8 +180,8 @@ router.get('/topics', (req, res) => {
   });
 });
 
-// 5. 提交投票
-router.post('/vote', requireAuth, (req, res) => {
+// 5. 提交投票（支持已登录用户与设备匿名 VoterToken 极速免密双轨）
+router.post('/vote', (req, res) => {
   const settings = db.getSettings();
 
   if (settings.status === 'paused') {
@@ -181,7 +191,8 @@ router.post('/vote', requireAuth, (req, res) => {
     return res.status(403).json({ success: false, error: '本次社课投票已截止' });
   }
 
-  const { topicIds } = req.body;
+  const voterId = getEffectiveVoterId(req) || ('anon-' + Math.random().toString(36).slice(2, 10));
+  const { topicIds, comment } = req.body;
   if (!Array.isArray(topicIds) || topicIds.length === 0) {
     return res.status(400).json({ success: false, error: '请至少选择一个社课主题' });
   }
@@ -203,18 +214,37 @@ router.post('/vote', requireAuth, (req, res) => {
   }
 
   // 检查之前是否已经投过票
-  const existingVote = db.getUserVote(req.user.id);
-  if (existingVote && !settings.allowChangeVote) {
-    return res.status(403).json({ success: false, error: '本次投票设置为提交后不可修改选票' });
+  const existingVote = db.getUserVote(voterId);
+
+  // 幂等性防护：若重复提交相同的社课选项且无新留言，直接返回已有选票
+  if (existingVote) {
+    const isSameTopics = existingVote.topicIds.length === uniqueTopicIds.length && 
+      existingVote.topicIds.every(id => uniqueTopicIds.includes(id));
+    if (isSameTopics && !comment) {
+      return res.json({
+        success: true,
+        message: '选票投出成功！已为您揭晓实时热度榜',
+        vote: existingVote,
+        voterToken: voterId,
+        hasVoted: true,
+        stats: db.getStatistics()
+      });
+    }
+
+    if (!settings.allowChangeVote) {
+      return res.status(403).json({ success: false, error: '本次投票设置为提交后不可修改选票' });
+    }
   }
 
-  const voteResult = db.submitVote(req.user.id, uniqueTopicIds);
+  const voteResult = db.submitVote(voterId, uniqueTopicIds);
   const stats = db.getStatistics();
 
   res.json({
     success: true,
-    message: existingVote ? '选票已成功更新！' : '投票成功！感谢为社课选题发声。',
+    message: existingVote ? '选票已成功更新！' : '选票投出成功！已为您揭晓实时热度榜',
     vote: voteResult,
+    voterToken: voterId,
+    hasVoted: true,
     stats
   });
 });
@@ -222,15 +252,18 @@ router.post('/vote', requireAuth, (req, res) => {
 // 6. 获取排行榜与数据统计
 router.get('/results', (req, res) => {
   const settings = db.getSettings();
-  const user = req.user;
-  const userVote = user ? db.getUserVote(user.id) : null;
+  const voterId = getEffectiveVoterId(req);
+  const userVote = voterId ? db.getUserVote(voterId) : null;
+  const hasVoted = !!userVote;
 
   const canSeeResults = settings.resultsVisibility === 'public' || 
-    (settings.resultsVisibility === 'after_vote' && !!userVote);
+    (settings.resultsVisibility === 'after_vote' && hasVoted) ||
+    (req.user && req.user.role === 'admin');
 
   if (!canSeeResults) {
     return res.status(403).json({ 
       success: false, 
+      locked: true,
       error: settings.resultsVisibility === 'after_vote' 
         ? '请先完成投票后查看实时榜单' 
         : '投票结果暂未公开，敬请期待公布' 
@@ -240,6 +273,7 @@ router.get('/results', (req, res) => {
   const stats = db.getStatistics();
   res.json({
     success: true,
+    locked: false,
     stats
   });
 });

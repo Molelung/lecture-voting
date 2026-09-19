@@ -9,9 +9,11 @@
  *    - 杜绝传统内存数组遍历或 KV List 最终一致性延迟（Eventual Consistency）导致的 60 秒数据滞后。
  * 3. 双轨高可用与边缘容灾（Dual-Engine Fallback）：
  *    - 同时向 D1 与 KV 双写备份，若任何单一引擎出现边缘波动，自动无缝降级平滑切换；
- *    - 议题列表与系统配置在 KV 中提供毫秒级边缘读取，读写性能与抗压能力达到生产最高标准。
- * 4. 校园网 NAT 穿透友好限流：
- *    - 采用设备 Token 级防刷，配合公网 IP 宽容上限，彻底避免同寝室/同教室同学共用 Wi-Fi 被误伤拦截。
+ *    - 议题列表与系统配置在 KV 中提供毫秒级边缘读取，读写性能与抗压能力达到生产最高标准；
+ *    - 选民与选票数据永久存储（Zero TTL），永不随日期跨度、午夜翻转或时间推移而清空或失效。
+ * 4. 校园网 NAT 穿透友好限流与多通道凭据识别：
+ *    - 支持 Header (X-Voter-Token)、Body (voterToken) 与 Query (voterToken) 三通道凭据透传，彻底免疫透明网关头剥离；
+ *    - 设备 Token 级防刷，配合公网 IP 宽容上限，彻底避免同寝室/同教室同学共用 Wi-Fi 被误伤拦截。
  */
 
 const CORS_HEADERS = {
@@ -27,6 +29,226 @@ const CORS_HEADERS = {
 
 const IP_RATE_MAP = new Map();
 const TOKEN_RATE_MAP = new Map();
+
+// 18 门官方社课元数据（防 KV 击穿终极内置兜底）
+const DEFAULT_TOPICS = [
+  {
+    "id": "topic-1",
+    "title": "【向内】爱自己",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "自我疗愈",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【自我疗愈】“奇怪的悖论在于，当我全然接纳真实的自己时，改变才会发生。” ——卡尔·罗杰斯",
+    "summary": "真正的爱自己并非消费主义层面的即时犒劳，而是建立在自我关怀（Self-Compassion）与无条件自我接纳之上的心智实践。本课围绕自我友善、普遍人性感知与正念觉察，探讨如何停止苛刻的“内在批判者”对话，在遭遇挫折与心理内耗时重构安全的内心据点，实现深层的自我疗愈与能量回流。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:01.000Z"
+  },
+  {
+    "id": "topic-2",
+    "title": "【向内】你想要怎样的人生？",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "自我认同",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【自我认同】“知道为什么而活的人，便能承受任何一种生活。” ——弗里德里希·尼采",
+    "summary": "从埃里克森的自我同一性（Self-Identity）危机与马西亚的认同状态模型出发，审视我们是在追逐外界赋予的“应当”，还是在探索自我的本质。课程结合价值澄清（Values Clarification）与内在动机理论，引导大家厘清核心生命价值，在迷茫与不确定性中确立属于自己的秩序感与人生航向。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:02.000Z"
+  },
+  {
+    "id": "topic-3",
+    "title": "【向内】类型心理学",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "类型心理学",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【类型心理学】“向外看的人在做梦，向内看的人方才清醒。” ——卡尔·荣格",
+    "summary": "破除快餐文化中标签化的刻板印象，以荣格的心理类型论（Psychological Types）与现代大五人格模型（Big Five）为坐标轴，简明通透地剖析内倾与外倾、感觉与直觉等认知功能偏好。帮助大家建立清晰的自我心智画像，理解个体差异背后的机能运转，学会扬长避短并达成与他人的深度共情。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:03.000Z"
+  },
+  {
+    "id": "topic-4",
+    "title": "【向内】翻山越岭时",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "目的论与课题分离",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【目的论与课题分离】“决定我们的不是过去的经历，而是我们为经历赋予的意义。” ——阿尔弗雷德·阿德勒",
+    "summary": "基于阿尔弗雷德·阿德勒的个体心理学，打破“原因论”的宿命束缚，转向以目的论（Teleology）重新诠释当下的选择与困顿。深度解构课题分离（Separation of Tasks）与共同体感觉，帮助我们在复杂的人际期待与现实羁绊面前建立坚韧的心灵边界，汲取奔赴自我人生的主观勇气。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:04.000Z"
+  },
+  {
+    "id": "topic-5",
+    "title": "【向内】梦之迷思",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "梦的解析与精神分析",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【梦的解析与精神分析】“对梦的解析，是通往潜意识知识的康庄大道。” ——西格蒙德·弗洛伊德",
+    "summary": "循着经典精神分析（Psychoanalysis）的深邃脉络，探索弗洛伊德笔下“通往潜意识的康庄大道”。深度解析显梦与隐意背后的凝缩、移置与象征等心理防御机制（Defense Mechanisms），并结合认知神经科学对快速眼动睡眠（REM）的研究，揭示梦境在情绪整合与自我整合层面的潜意识密码。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:05.000Z"
+  },
+  {
+    "id": "topic-6",
+    "title": "【向内】我们本为矛盾集合体",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "神经症结",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【神经症结】“只要我们还活着，内心的冲突就不可避免；直面冲突，才是自由的开端。” ——卡伦·霍妮",
+    "summary": "立足卡伦·霍妮的神经症人格理论，剖析我们在“亲近人、反抗人、回避人”三种基本态度间的摇摆与内心冲突。深度探讨理想化自我意象（Idealized Self-Image）与真实自我之间的剧烈撕裂，剖析内疚感、病态焦虑与强迫性追求的深层症结，学会接纳矛盾本性，走向真实的内在和谐。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:06.000Z"
+  },
+  {
+    "id": "topic-7",
+    "title": "【向内】考试在考些什么！",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "考试脑科学",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【考试脑科学】“欺骗海马体的秘诀，不是机械输入，而是高频次的主动提取与输出。” ——池谷裕二",
+    "summary": "跳出死记硬背与盲目刷题的低效陷阱，从认知心理学与认知神经科学（Cognitive Neuroscience）的视角拆解学习本质。深度剖析海马体记忆编码、工作记忆容量限制与测试效应（Testing Effect），传授如何运用间隔检索与神经可塑性原理抵抗遗忘曲线，在高压考核中保持理性清醒与认知韧性。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:07.000Z"
+  },
+  {
+    "id": "topic-8",
+    "title": "【向内】当人生的丘比特",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "青春期与爱情",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【青春期与爱情】“不成熟的爱说‘因为我需要你，所以我爱你’；成熟的爱说‘因为我爱你，所以我需要你’。” ——埃里希·弗洛姆",
+    "summary": "从斯滕伯格的爱情三元论（Triangular Theory of Love，涵盖亲密、激情、承诺）与依恋风格（Attachment Styles）展开，探讨青春期荷尔蒙、多巴胺奖赏回路与心智成长交织的情感萌动。理性剖析理想化投射、人际边界与依恋冲突，帮助大家理解心动的本质，掌握构建成熟、真诚且互相滋养的亲密关系心法。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:08.000Z"
+  },
+  {
+    "id": "topic-9",
+    "title": "【向内】完美只存于心",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向内",
+    "tag": "破解完美主义",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【破解完美主义】“万物皆有裂痕，那是光照进来的地方。” ——莱昂纳德·科恩",
+    "summary": "破除‘必须做到尽善尽美’的认知枷锁，立足临床心理学与认知行为理论（CBT）对适应不良型完美主义（Maladaptive Perfectionism）的系统剖析。深度解构‘全或无’二分思维、冒充者综合征与对负面评价的恐惧（Fear of Negative Evaluation），探讨成就与自我价值（Self-Worth）的过度捆绑机制。结合接纳承诺疗法（ACT）与‘足够好’（Good Enough）原则，传授认知重构与行为暴露心法，学会在真实世界的瑕疵中安住身心，破解拖延与自我内耗，重获轻盈前行的心理弹性。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:50:09.000Z"
+  },
+  {
+    "id": "topic-10",
+    "title": "【向外】爱河于爱意中流淌",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向外",
+    "tag": "亲密关系·爱情篇",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【亲密关系·爱情篇】“爱绝不是互相凝视，而是朝同一个方向并肩凝视。” ——安托万·德·圣-埃克苏佩里",
+    "summary": "跳脱浪漫主义幻想的迷思，从社会心理学与人际吸引理论（Interpersonal Attraction）切入。深度探讨互惠性、自我表露（Self-Disclosure）与情感共鸣在亲密关系建立与维系中的核心作用。剖析爱情中的沟通归因偏差与承诺机制，学会如何在真实的亲密互动中跨越摩擦，让爱意在理解与尊重中持久流淌。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:56:01.000Z"
+  },
+  {
+    "id": "topic-11",
+    "title": "【向外】友谊于真情中长存",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向外",
+    "tag": "亲密关系·友谊篇",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【亲密关系·友谊篇】“什么是朋友？那是寄居在两个身体里的同一个灵魂。” ——亚里士多德",
+    "summary": "从人际交往的社会交换理论（Social Exchange Theory）与朋辈支持系统（Peer Support System）展开，探索友谊从浅层社交走向深层同盟的心智轨迹。聚焦共情理解、情感边界与人际信任的建立，探讨如何在快节奏与角色转换中应对友谊疏离，维系真诚、稳定且赋予彼此生命韧性的挚友情谊。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:56:02.000Z"
+  },
+  {
+    "id": "topic-12",
+    "title": "【向外】脏话心理学",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向外",
+    "tag": "社会心理学",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【社会心理学】“在极度痛苦的时刻，脏话所能给予的情绪慰藉，是祈祷文所无法比拟的。” ——马克·吐温",
+    "summary": "跳出刻板的道德评判，立足社会心理学与神经语言学（Neurolinguistics）视阈，透视脏话与禁忌语的心理成因。深入剖析情绪宣泄、低限度镇痛效应（Hypoalgesic Effect）以及在特定群体中的社会凝聚与身份认同功能；同时探讨如何建立言语元认知觉察（Metacognitive Awareness），在理解情绪冲动本源的同时掌握非攻击性的情感表达方式。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:56:03.000Z"
+  },
+  {
+    "id": "topic-13",
+    "title": "【向下】心绪流淌",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向下",
+    "tag": "心流",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【心流】“全身心投入某件事，忘却时间的流逝与自我的存在，便是生命的最优体验。” ——米哈里·契克森米哈赖",
+    "summary": "基于米哈里·契克森米哈赖的心流理论（Flow Theory），探讨注意力完全沉浸、自我意识暂歇的极致心智状态。剖析技能水平与挑战难度的精密动态平衡，解构清晰目标、即时反馈与前额叶短暂低激活（Hypofrontality）机制，帮助大家摆脱外界噪音干扰，在日常研习中主动搭建进入心流通道的高效心智脚手架。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:58:01.000Z"
+  },
+  {
+    "id": "topic-14",
+    "title": "【向下】天赋赠予我",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向下",
+    "tag": "刻意练习",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【刻意练习】“所谓卓越，不是天赋的私相授受，而是心智走出舒适区后的持续重塑。” ——安德斯·埃里克森",
+    "summary": "破除‘唯天赋论’的认知宿命，立足安德斯·埃里克森的刻意练习（Deliberate Practice）模型与脑神经可塑性原理。深度解析如何跳出无意识的机械重复与舒适区，建立高质量的心理表征（Mental Representations）；通过针对性微步拆解、即时纠偏反馈与长期髓鞘质沉淀机制，将模糊的潜能淬炼为稳定卓越的专业心智能力。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:58:02.000Z"
+  },
+  {
+    "id": "topic-15",
+    "title": "【向下】锚定思绪",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向下",
+    "tag": "专注力",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【专注力】“信息的丰富导致了注意力的匮乏；心智的品质取决于专注的深度。” ——赫伯特·西蒙",
+    "summary": "从认知心理学中的选择性注意（Selective Attention）与执行控制网络（Executive Control Network）切入，审视现代注意力经济对心智聚焦的瓦解。深度剖析任务切换损耗与注意力残留（Attention Residue）效应，传授基于环境摩擦力设计、认知负荷控制与无干扰深潜心法的专注力工程化落地路径，夺回大脑的主控权。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:58:03.000Z"
+  },
+  {
+    "id": "topic-16",
+    "title": "【向下】遁入空灵",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向下",
+    "tag": "正念与移空",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【正念与移空】“正念就是有意识、不带评判地，将全部觉知安放于此时此刻。” ——乔·卡巴金",
+    "summary": "立足正念减压疗法（MBSR）与认知解离（Cognitive Defusion）理论，探索如何平息大脑默认模式网络（Default Mode Network, DMN）的过度反刍。结合传统移空技术与现代具身觉察，学会在焦虑与执念升起时退后一步，以‘观察者自我’审视思绪的流动，体验心神澄澈、身心安顿的空灵境界。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:58:04.000Z"
+  },
+  {
+    "id": "topic-17",
+    "title": "【向下】手指伸缩自如",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向下",
+    "tag": "自控力",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【自控力】“自控的关键不是压抑欲望的死撑，而是清晰洞悉自己内心深处真正想要什么。” ——凯利·麦格尼格尔",
+    "summary": "颠覆‘靠死撑对抗诱惑’的误区，以自我损耗模型（Ego Depletion）的最新修正与前额叶抑制控制（Inhibitory Control）机制为依托。深度拆解多巴胺渴求回路与即时满足陷阱，传授冷热认知切换、执行意图（Implementation Intentions，若-则计划）与预先承诺策略，实现如‘手指伸缩自如’般游刃有余、不费力的自律实践。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:58:05.000Z"
+  },
+  {
+    "id": "topic-18",
+    "title": "【向下】清醒的活",
+    "speaker": "墨澜 & 诙谐",
+    "category": "向下",
+    "tag": "活在当下",
+    "duration": "45分钟 + 15分钟研讨",
+    "hook": "【活在当下】“你不是脑海中那个喋喋不休的声音，你是聆听那个声音的清醒觉知。” ——迈克·辛格",
+    "summary": "深度汲取《清醒地活着》（The Untethered Soul）的心灵洞见，并与阿德勒个体心理学中‘人生如连续刹那的聚光灯舞台’哲学思想深度交融。跳脱对过去遗憾的反刍与对未来不确定性的灾难化预演，引导我们觉察内心永不停歇的‘独白者’，以超越性的觉知打破情绪内耗与认知纠缠；学会收束弥散的焦虑，将全部心力聚焦于此时此刻正在经历的‘点’，在踏实的行进中体验安顿、澄明与真实的生命力量。",
+    "outline": [],
+    "createdAt": "2026-09-18T21:58:06.000Z"
+  }
+];
 
 function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -50,7 +272,7 @@ function sanitizeText(str, maxLength = 200) {
     .slice(0, maxLength);
 }
 
-function checkTokenRateLimit(token, limit = 15, windowMs = 60000) {
+function checkTokenRateLimit(token, limit = 20, windowMs = 60000) {
   if (!token) return true;
   const now = Date.now();
   if (TOKEN_RATE_MAP.size > 5000) {
@@ -70,7 +292,7 @@ function checkTokenRateLimit(token, limit = 15, windowMs = 60000) {
   return true;
 }
 
-function checkIpRateLimit(ip, limit = 200, windowMs = 60000) {
+function checkIpRateLimit(ip, limit = 250, windowMs = 60000) {
   const now = Date.now();
   if (IP_RATE_MAP.size > 2000) {
     for (const [key, val] of IP_RATE_MAP.entries()) {
@@ -125,13 +347,14 @@ function createToken(user) {
     username: user.username,
     displayName: user.displayName,
     role: user.role,
-    exp: Date.now() + 86400000 * 7
+    exp: Date.now() + 86400000 * 30
   }));
   const signature = base64UrlEncode('lecture-token-sig');
   return `${header}.${payload}.${signature}`;
 }
 
 async function getJsonKV(KV, key, fallback = null) {
+  if (!KV) return fallback;
   try {
     const raw = await KV.get(key);
     if (!raw) return fallback;
@@ -141,10 +364,17 @@ async function getJsonKV(KV, key, fallback = null) {
   }
 }
 
-async function safePutKV(KV, key, value, options) {
+// 安全写入 KV：强制移除所有 expirationTtl，实行绝对永久持久化！
+async function safePutKV(KV, key, value, options = {}) {
+  if (!KV) return;
   try {
-    await KV.put(key, value, options);
-  } catch (e) {}
+    const safeOpts = { ...options };
+    if (safeOpts.expirationTtl) delete safeOpts.expirationTtl;
+    if (safeOpts.expiration) delete safeOpts.expiration;
+    await KV.put(key, value, safeOpts);
+  } catch (e) {
+    console.warn('safePutKV error for key ' + key + ':', e.message);
+  }
 }
 
 export default {
@@ -166,7 +396,9 @@ export default {
     }
 
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
-    const voterToken = request.headers.get('X-Voter-Token') || url.searchParams.get('voterToken') || '';
+    
+    // 多通道捕获选民标识：请求头 > URL Query 参数
+    let voterToken = request.headers.get('X-Voter-Token') || url.searchParams.get('voterToken') || '';
     const adminUser = parseUserFromHeader(request);
     const isAdmin = !!(adminUser && adminUser.role === 'admin');
 
@@ -204,15 +436,25 @@ export default {
         let hasVoted = false;
         let totalVoters = 0;
         let totalVotesCast = 0;
+        let settings = {
+          title: '朋辈社课大投票！',
+          subtitle: '',
+          maxVotesPerUser: 3,
+          allowChangeVote: true,
+          status: 'open',
+          resultsVisibility: 'after_vote'
+        };
 
+        // 1. 优先从 D1 读取
         if (DB) {
           try {
-            const [settings, countRes, voterRes] = await Promise.all([
+            const [s, countRes, voterRes] = await Promise.all([
               settingsPromise,
               DB.prepare('SELECT (SELECT COUNT(*) FROM ballots) as totalVoters, (SELECT COUNT(*) FROM vote_items) as totalVotesCast').first(),
               voterToken ? DB.prepare('SELECT * FROM ballots WHERE voter_token = ?').bind(voterToken).first() : Promise.resolve(null)
             ]);
 
+            if (s) settings = s;
             if (countRes) {
               totalVoters = countRes.totalVoters || 0;
               totalVotesCast = countRes.totalVotesCast || 0;
@@ -228,38 +470,37 @@ export default {
                 votedAt: voterRes.voted_at
               };
             }
-
-            const canSeeResults = Boolean(
-              settings.resultsVisibility === 'public' || 
-              (settings.resultsVisibility === 'after_vote' && hasVoted)
-            );
-
-            const dur = Date.now() - startTime;
-            return jsonResponse({
-              success: true,
-              settings,
-              user: adminUser ? { username: adminUser.username, role: 'admin' } : null,
-              hasVoted,
-              userVote,
-              canSeeResults,
-              statsSummary: { totalVoters, totalVotesCast: canSeeResults ? totalVotesCast : null }
-            }, 200, { 'Server-Timing': `app;dur=${dur}` });
           } catch (d1Err) {
             console.warn('D1 query status fallback to KV:', d1Err.message);
           }
+        } else {
+          settings = await settingsPromise;
         }
 
-        // KV Fallback (当 D1 离线时的容灾保障)
-        const [settings, ballots, directVote] = await Promise.all([
-          settingsPromise,
-          KV ? getJsonKV(KV, 'ballots', []) : Promise.resolve([]),
-          (voterToken && KV) ? getJsonKV(KV, 'voter:' + voterToken, null) : Promise.resolve(null)
-        ]);
+        // 2. 双轨对齐与 KV 兜底容灾：若 D1 未找到选票，或 D1 暂离线，回溯查验 KV
+        if (!hasVoted && voterToken && KV) {
+          const directVote = await getJsonKV(KV, 'voter:' + voterToken, null);
+          if (directVote) {
+            hasVoted = true;
+            userVote = directVote;
+          }
+        }
 
-        hasVoted = !!directVote || ballots.some(b => b && (b.voterId === voterToken || b.voterToken === voterToken));
-        userVote = directVote || ballots.find(b => b && (b.voterId === voterToken || b.voterToken === voterToken));
-        totalVoters = ballots.length;
-        totalVotesCast = ballots.reduce((acc, b) => acc + ((b.topicIds && b.topicIds.length) || 0), 0);
+        // 若总人数为 0 但 KV 中存在数据，以 KV 选票池兜底
+        if (totalVoters === 0 && KV) {
+          const kvBallots = await getJsonKV(KV, 'ballots', []);
+          if (kvBallots.length > 0) {
+            totalVoters = kvBallots.length;
+            totalVotesCast = kvBallots.reduce((acc, b) => acc + ((b.topicIds && b.topicIds.length) || 0), 0);
+            if (!hasVoted && voterToken) {
+              const b = kvBallots.find(x => x && (x.voterId === voterToken || x.voterToken === voterToken));
+              if (b) {
+                hasVoted = true;
+                userVote = b;
+              }
+            }
+          }
+        }
 
         const canSeeResults = Boolean(
           settings.resultsVisibility === 'public' || 
@@ -280,10 +521,12 @@ export default {
 
       // 2. GET /api/topics (社课列表与实时票数)
       if (path === '/api/topics' && method === 'GET') {
-        const [settings, topics] = await Promise.all([
+        const [settings, kvTopics] = await Promise.all([
           getJsonKV(KV, 'settings', { resultsVisibility: 'after_vote' }),
-          getJsonKV(KV, 'topics', [])
+          getJsonKV(KV, 'topics', null)
         ]);
+
+        const topics = (kvTopics && Array.isArray(kvTopics) && kvTopics.length > 0) ? kvTopics : DEFAULT_TOPICS;
 
         let hasVoted = false;
         let counts = {};
@@ -314,7 +557,30 @@ export default {
               }
             }
           } catch (e) {
-            console.warn('D1 topics tally error, fallback:', e.message);
+            console.warn('D1 topics tally error, fallback to KV:', e.message);
+          }
+        }
+
+        // KV 双轨容灾辅助判定
+        if (!hasVoted && voterToken && KV) {
+          const directVote = await getJsonKV(KV, 'voter:' + voterToken, null);
+          if (directVote) hasVoted = true;
+        }
+
+        // 若 D1 计数为 0 但 KV 存在选票列表，实施 KV 聚合计算
+        if (totalVotesCast === 0 && KV) {
+          const kvBallots = await getJsonKV(KV, 'ballots', []);
+          if (kvBallots.length > 0) {
+            for (const b of kvBallots) {
+              if (b && Array.isArray(b.topicIds)) {
+                for (const tid of b.topicIds) {
+                  if (counts[tid] !== undefined) {
+                    counts[tid]++;
+                    totalVotesCast++;
+                  }
+                }
+              }
+            }
           }
         }
 
@@ -346,10 +612,12 @@ export default {
 
       // 3. GET /api/results (实时热度排行榜)
       if (path === '/api/results' && method === 'GET') {
-        const [settings, topics] = await Promise.all([
+        const [settings, kvTopics] = await Promise.all([
           getJsonKV(KV, 'settings', { resultsVisibility: 'after_vote' }),
-          getJsonKV(KV, 'topics', [])
+          getJsonKV(KV, 'topics', null)
         ]);
+
+        const topics = (kvTopics && Array.isArray(kvTopics) && kvTopics.length > 0) ? kvTopics : DEFAULT_TOPICS;
 
         let hasVoted = false;
         let counts = {};
@@ -376,7 +644,29 @@ export default {
               }
             }
           } catch (e) {
-            console.warn('D1 results tally error:', e.message);
+            console.warn('D1 results tally error, fallback to KV:', e.message);
+          }
+        }
+
+        if (!hasVoted && voterToken && KV) {
+          const directVote = await getJsonKV(KV, 'voter:' + voterToken, null);
+          if (directVote) hasVoted = true;
+        }
+
+        if (totalVoters === 0 && KV) {
+          const kvBallots = await getJsonKV(KV, 'ballots', []);
+          if (kvBallots.length > 0) {
+            totalVoters = kvBallots.length;
+            for (const b of kvBallots) {
+              if (b && Array.isArray(b.topicIds)) {
+                for (const tid of b.topicIds) {
+                  if (counts[tid] !== undefined) {
+                    counts[tid]++;
+                    totalVotesCast++;
+                  }
+                }
+              }
+            }
           }
         }
 
@@ -413,24 +703,27 @@ export default {
         }, 200, { 'Server-Timing': `app;dur=${dur}` });
       }
 
-      // 4. POST /api/vote (零冲突 ACID 事务投票)
+      // 4. POST /api/vote (零冲突 ACID 事务投票 + 双写永久镜像备份)
       if (path === '/api/vote' && method === 'POST') {
         const body = await request.json().catch(() => ({}));
-        const clientToken = voterToken || body.voterToken || ('anon-' + Math.random().toString(36).slice(2, 12));
+        // 多通道获取选民 token：Header > Body > URL Query > 兜底
+        const clientToken = voterToken || body.voterToken || url.searchParams.get('voterToken') || ('anon-' + Math.random().toString(36).slice(2, 12));
 
-        if (!checkTokenRateLimit(clientToken, 10, 60000)) {
+        if (!checkTokenRateLimit(clientToken, 20, 60000)) {
           return jsonResponse({ error: '投票提交过快，请稍候再试' }, 429);
         }
-        if (!checkIpRateLimit(clientIp, 180, 60000)) {
+        if (!checkIpRateLimit(clientIp, 250, 60000)) {
           return jsonResponse({ error: '当前网络访问量过大，请稍候再试' }, 429);
         }
 
         const { topicIds: rawTopicIds, comment } = body;
 
-        const [settings, topics] = await Promise.all([
+        const [settings, kvTopics] = await Promise.all([
           getJsonKV(KV, 'settings', { maxVotesPerUser: 3, status: 'open', allowChangeVote: true }),
-          getJsonKV(KV, 'topics', [])
+          getJsonKV(KV, 'topics', null)
         ]);
+
+        const topics = (kvTopics && Array.isArray(kvTopics) && kvTopics.length > 0) ? kvTopics : DEFAULT_TOPICS;
 
         if (settings.status === 'closed') return jsonResponse({ error: '投票已截止并锁定' }, 400);
         if (settings.status === 'paused') return jsonResponse({ error: '投票暂缓进行中' }, 400);
@@ -452,47 +745,87 @@ export default {
         const ballotId = 'ballot-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
         const votedAt = new Date().toISOString();
 
-        // 1. D1 事务写入：100% ACID 强一致性保证，绝无并发覆盖丢票！
+        // 检查用户是否已投过票（幂等防重试保护与改票校验）
+        let existingVote = null;
         if (DB) {
-          // 检查改票权限
-          const existing = await DB.prepare('SELECT id FROM ballots WHERE voter_token = ?').bind(clientToken).first();
-          if (existing && !settings.allowChangeVote) {
-            return jsonResponse({ error: '本次投票设定为不可修改已提交选票' }, 400);
-          }
-
-          const statements = [
-            DB.prepare(`
-              INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at)
-              VALUES (?, ?, ?, ?, ?, ?)
-              ON CONFLICT(voter_token) DO UPDATE SET
-                topic_ids = excluded.topic_ids,
-                comment = excluded.comment,
-                client_ip = excluded.client_ip,
-                voted_at = excluded.voted_at
-            `).bind(ballotId, clientToken, JSON.stringify(topicIds), cleanComment, clientIp.slice(0, 16), votedAt),
-            DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(clientToken)
-          ];
-
-          for (const tid of topicIds) {
-            statements.push(
-              DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)').bind(clientToken, tid, votedAt)
-            );
-          }
-
-          if (cleanComment) {
-            const cmtId = 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-            statements.push(
-              DB.prepare(`
-                INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-              `).bind(cmtId, topicIds[0] || 'general', topicMap[topicIds[0]] || '', clientToken, '同学', cleanComment, votedAt)
-            );
-          }
-
-          await DB.batch(statements);
+          try {
+            existingVote = await DB.prepare('SELECT * FROM ballots WHERE voter_token = ?').bind(clientToken).first();
+          } catch (e) {}
+        }
+        if (!existingVote && KV) {
+          existingVote = await getJsonKV(KV, 'voter:' + clientToken, null);
         }
 
-        // 2. 双轨异步镜像写入 KV 备份（不阻碍主响应）
+        if (existingVote) {
+          // 幂等性检测：若提交的选项完全一致且未追加新留言，直接返回成功，杜绝网络重试误报
+          const existingTopics = Array.isArray(existingVote.topic_ids)
+            ? existingVote.topic_ids
+            : (typeof existingVote.topic_ids === 'string' ? JSON.parse(existingVote.topic_ids || '[]') : (existingVote.topicIds || []));
+          const isSameTopics = existingTopics.length === topicIds.length && existingTopics.every(id => topicIds.includes(id));
+          if (isSameTopics && !cleanComment) {
+            return jsonResponse({
+              success: true,
+              message: '选票投出成功！已为您揭晓实时热度榜',
+              voterToken: clientToken,
+              hasVoted: true,
+              vote: {
+                id: existingVote.id,
+                voterId: clientToken,
+                voterToken: clientToken,
+                topicIds,
+                topicTitles: topicIds.map(id => topicMap[id] || id),
+                comment: existingVote.comment || '',
+                votedAt: existingVote.voted_at || existingVote.votedAt || votedAt
+              }
+            }, 200, { 'Server-Timing': `app;dur=${Date.now() - startTime}` });
+          }
+
+          if (!settings.allowChangeVote) {
+            return jsonResponse({ error: '本次投票设定为不可修改已提交选票' }, 400);
+          }
+        }
+
+        // 1. D1 事务写入：100% ACID 强一致性保证，绝无并发覆盖丢票！
+        let d1WriteSuccess = false;
+        if (DB) {
+          try {
+            const statements = [
+              DB.prepare(`
+                INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(voter_token) DO UPDATE SET
+                  topic_ids = excluded.topic_ids,
+                  comment = excluded.comment,
+                  client_ip = excluded.client_ip,
+                  voted_at = excluded.voted_at
+              `).bind(ballotId, clientToken, JSON.stringify(topicIds), cleanComment, clientIp.slice(0, 16), votedAt),
+              DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(clientToken)
+            ];
+
+            for (const tid of topicIds) {
+              statements.push(
+                DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)').bind(clientToken, tid, votedAt)
+              );
+            }
+
+            if (cleanComment) {
+              const cmtId = 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+              statements.push(
+                DB.prepare(`
+                  INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                `).bind(cmtId, topicIds[0] || 'general', topicMap[topicIds[0]] || '', clientToken, '同学', cleanComment, votedAt)
+              );
+            }
+
+            await DB.batch(statements);
+            d1WriteSuccess = true;
+          } catch (d1Err) {
+            console.error('D1 batch write error, triggering synchronous KV fallback:', d1Err.message);
+          }
+        }
+
+        // 2. 双轨镜像写入 KV 备份（永久存储，无 TTL，并同步全局 ballots 数组）
         const ballot = {
           id: ballotId,
           voterId: clientToken,
@@ -504,12 +837,49 @@ export default {
           votedAt
         };
 
-        if (ctx && typeof ctx.waitUntil === 'function') {
-          ctx.waitUntil((async () => {
-            if (KV) {
-              await safePutKV(KV, 'voter:' + clientToken, JSON.stringify(ballot), { expirationTtl: 86400 * 90 });
+        const syncKvTask = async () => {
+          if (!KV) return;
+          try {
+            // 写入单人选票
+            await safePutKV(KV, 'voter:' + clientToken, JSON.stringify(ballot));
+            // 同步更新全局选票明细池
+            const currentBallots = await getJsonKV(KV, 'ballots', []);
+            const idx = currentBallots.findIndex(b => b && (b.voterId === clientToken || b.voterToken === clientToken));
+            if (idx >= 0) {
+              currentBallots[idx] = ballot;
+            } else {
+              currentBallots.push(ballot);
             }
-          })());
+            await safePutKV(KV, 'ballots', JSON.stringify(currentBallots));
+
+            // 如果有留言且 D1 写入未成功，向 KV comments 写入备份
+            if (cleanComment && !d1WriteSuccess) {
+              const currentComments = await getJsonKV(KV, 'comments', []);
+              currentComments.unshift({
+                id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                topicId: topicIds[0] || 'general',
+                topicTitle: topicMap[topicIds[0]] || '',
+                voterId: clientToken,
+                authorName: '同学',
+                text: cleanComment,
+                createdAt: votedAt
+              });
+              await safePutKV(KV, 'comments', JSON.stringify(currentComments.slice(0, 300)));
+            }
+          } catch (kvErr) {
+            console.error('syncKvTask error:', kvErr.message);
+          }
+        };
+
+        if (d1WriteSuccess) {
+          if (ctx && typeof ctx.waitUntil === 'function') {
+            ctx.waitUntil(syncKvTask());
+          } else {
+            await syncKvTask();
+          }
+        } else {
+          // 若 D1 写入异常，同步等待 KV 写入完成，确保数据落盘不丢失
+          await syncKvTask();
         }
 
         const dur = Date.now() - startTime;
@@ -538,7 +908,9 @@ export default {
               }));
               const dur = Date.now() - startTime;
               return jsonResponse({ success: true, comments: list }, 200, { 'Server-Timing': `app;dur=${dur}` });
-            } catch (e) {}
+            } catch (e) {
+              console.warn('D1 comments query error, fallback to KV:', e.message);
+            }
           }
 
           const comments = await getJsonKV(KV, 'comments', []);
@@ -546,11 +918,13 @@ export default {
         }
 
         if (method === 'POST') {
-          if (!checkTokenRateLimit(voterToken || clientIp, 6, 60000)) {
+          const body = await request.json().catch(() => ({}));
+          const authorToken = voterToken || body.voterToken || clientIp;
+
+          if (!checkTokenRateLimit(authorToken, 8, 60000)) {
             return jsonResponse({ error: '发言过于频繁，请稍息后再试' }, 429);
           }
 
-          const body = await request.json().catch(() => ({}));
           const cleanText = sanitizeText(body.text, 200);
           if (!cleanText) return jsonResponse({ error: '留言内容不能为空' }, 400);
 
@@ -558,7 +932,7 @@ export default {
           const topicId = body.topicId || 'general';
           let topicTitle = '';
           if (topicId !== 'general') {
-            const topics = await getJsonKV(KV, 'topics', []);
+            const topics = await getJsonKV(KV, 'topics', DEFAULT_TOPICS);
             const found = topics.find(t => t.id === topicId);
             if (found) topicTitle = found.title;
           }
@@ -566,22 +940,44 @@ export default {
           const cmtId = 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
           const createdAt = new Date().toISOString();
 
+          let d1Success = false;
           if (DB) {
-            await DB.prepare(`
-              INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).bind(cmtId, topicId, topicTitle, voterToken || 'anon', cleanAuthor, cleanText, createdAt).run();
+            try {
+              await DB.prepare(`
+                INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+              `).bind(cmtId, topicId, topicTitle, authorToken, cleanAuthor, cleanText, createdAt).run();
+              d1Success = true;
+            } catch (e) {
+              console.warn('D1 insert comment error, fallback to KV:', e.message);
+            }
           }
 
           const newComment = {
             id: cmtId,
             topicId,
             topicTitle,
-            voterId: voterToken || 'anon',
+            voterId: authorToken,
             authorName: cleanAuthor,
             text: cleanText,
             createdAt
           };
+
+          // 双写同步 KV
+          if (KV) {
+            const syncCommentKV = async () => {
+              try {
+                const current = await getJsonKV(KV, 'comments', []);
+                current.unshift(newComment);
+                await safePutKV(KV, 'comments', JSON.stringify(current.slice(0, 300)));
+              } catch (e) {}
+            };
+            if (ctx && typeof ctx.waitUntil === 'function') {
+              ctx.waitUntil(syncCommentKV());
+            } else {
+              await syncCommentKV();
+            }
+          }
 
           const dur = Date.now() - startTime;
           return jsonResponse({ success: true, message: '留言已发布！', comment: newComment }, 200, {
@@ -595,7 +991,16 @@ export default {
         if (!isAdmin) return jsonResponse({ error: '需要管理员权限' }, 403);
         const commentId = path.split('/')[3];
         if (DB) {
-          await DB.prepare('DELETE FROM comments WHERE id = ?').bind(commentId).run();
+          try {
+            await DB.prepare('DELETE FROM comments WHERE id = ?').bind(commentId).run();
+          } catch (e) {}
+        }
+        if (KV) {
+          try {
+            const current = await getJsonKV(KV, 'comments', []);
+            const next = current.filter(c => c.id !== commentId);
+            await safePutKV(KV, 'comments', JSON.stringify(next));
+          } catch (e) {}
         }
         return jsonResponse({ success: true, message: '留言已删除' });
       }
@@ -606,23 +1011,34 @@ export default {
 
         if (method === 'GET') {
           if (DB) {
-            const res = await DB.prepare('SELECT * FROM comments WHERE topic_id = ? ORDER BY created_at DESC LIMIT 100').bind(topicId).all();
-            const list = (res.results || []).map(c => ({
-              id: c.id,
-              text: c.text,
-              authorName: c.author_name || '同学',
-              createdAt: c.created_at
-            }));
-            return jsonResponse({ success: true, comments: list });
+            try {
+              const res = await DB.prepare('SELECT * FROM comments WHERE topic_id = ? ORDER BY created_at DESC LIMIT 100').bind(topicId).all();
+              const list = (res.results || []).map(c => ({
+                id: c.id,
+                text: c.text,
+                authorName: c.author_name || '同学',
+                createdAt: c.created_at
+              }));
+              return jsonResponse({ success: true, comments: list });
+            } catch (e) {}
           }
-          return jsonResponse({ success: true, comments: [] });
+          const allComments = await getJsonKV(KV, 'comments', []);
+          const list = allComments.filter(c => c.topicId === topicId).map(c => ({
+            id: c.id,
+            text: c.text,
+            authorName: c.authorName || '同学',
+            createdAt: c.createdAt
+          }));
+          return jsonResponse({ success: true, comments: list });
         }
 
         if (method === 'POST') {
-          if (!checkTokenRateLimit(voterToken || clientIp, 6, 60000)) {
+          const body = await request.json().catch(() => ({}));
+          const authorToken = voterToken || body.voterToken || clientIp;
+
+          if (!checkTokenRateLimit(authorToken, 8, 60000)) {
             return jsonResponse({ error: '发言过于频繁，请稍息后再试' }, 429);
           }
-          const body = await request.json().catch(() => ({}));
           const cleanText = sanitizeText(body.text, 200);
           if (!cleanText) return jsonResponse({ error: '留言内容不能为空' }, 400);
 
@@ -631,10 +1047,27 @@ export default {
           const createdAt = new Date().toISOString();
 
           if (DB) {
-            await DB.prepare(`
-              INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).bind(cmtId, topicId, '', voterToken || 'anon', cleanAuthor, cleanText, createdAt).run();
+            try {
+              await DB.prepare(`
+                INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+              `).bind(cmtId, topicId, '', authorToken, cleanAuthor, cleanText, createdAt).run();
+            } catch (e) {}
+          }
+
+          if (KV) {
+            const syncTopicCmt = async () => {
+              try {
+                const current = await getJsonKV(KV, 'comments', []);
+                current.unshift({ id: cmtId, topicId, topicTitle: '', voterId: authorToken, authorName: cleanAuthor, text: cleanText, createdAt });
+                await safePutKV(KV, 'comments', JSON.stringify(current.slice(0, 300)));
+              } catch (e) {}
+            };
+            if (ctx && typeof ctx.waitUntil === 'function') {
+              ctx.waitUntil(syncTopicCmt());
+            } else {
+              await syncTopicCmt();
+            }
           }
 
           return jsonResponse({
@@ -664,17 +1097,19 @@ export default {
         // GET /api/admin/ballots (查看所有选票明细)
         if (path === '/api/admin/ballots' && method === 'GET') {
           if (DB) {
-            const res = await DB.prepare('SELECT * FROM ballots ORDER BY voted_at DESC').all();
-            const list = (res.results || []).map(b => ({
-              id: b.id,
-              voterId: b.voter_token,
-              voterToken: b.voter_token,
-              topicIds: JSON.parse(b.topic_ids || '[]'),
-              comment: b.comment,
-              clientIp: b.client_ip,
-              votedAt: b.voted_at
-            }));
-            return jsonResponse({ success: true, ballots: list });
+            try {
+              const res = await DB.prepare('SELECT * FROM ballots ORDER BY voted_at DESC').all();
+              const list = (res.results || []).map(b => ({
+                id: b.id,
+                voterId: b.voter_token,
+                voterToken: b.voter_token,
+                topicIds: JSON.parse(b.topic_ids || '[]'),
+                comment: b.comment,
+                clientIp: b.client_ip,
+                votedAt: b.voted_at
+              }));
+              return jsonResponse({ success: true, ballots: list });
+            } catch (e) {}
           }
           const ballots = await getJsonKV(KV, 'ballots', []);
           return jsonResponse({ success: true, ballots });
@@ -684,14 +1119,23 @@ export default {
         if (path.startsWith('/api/admin/ballots/') && method === 'DELETE') {
           const ballotId = path.split('/')[4];
           if (DB) {
-            const row = await DB.prepare('SELECT voter_token FROM ballots WHERE id = ?').bind(ballotId).first();
-            if (row) {
-              await DB.batch([
-                DB.prepare('DELETE FROM ballots WHERE id = ?').bind(ballotId),
-                DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(row.voter_token)
-              ]);
-              if (KV) await KV.delete('voter:' + row.voter_token);
-            }
+            try {
+              const row = await DB.prepare('SELECT voter_token FROM ballots WHERE id = ?').bind(ballotId).first();
+              if (row) {
+                await DB.batch([
+                  DB.prepare('DELETE FROM ballots WHERE id = ?').bind(ballotId),
+                  DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(row.voter_token)
+                ]);
+                if (KV) await KV.delete('voter:' + row.voter_token);
+              }
+            } catch (e) {}
+          }
+          if (KV) {
+            try {
+              const current = await getJsonKV(KV, 'ballots', []);
+              const next = current.filter(b => b.id !== ballotId);
+              await safePutKV(KV, 'ballots', JSON.stringify(next));
+            } catch (e) {}
           }
           return jsonResponse({ success: true, message: '选票明细已成功撤销并同步扣减！' });
         }
@@ -699,11 +1143,13 @@ export default {
         // POST /api/admin/clear-votes (彻底清空重置选票与选民状态)
         if ((path === '/api/admin/clear-votes' || path === '/api/admin/reset-votes') && method === 'POST') {
           if (DB) {
-            await DB.batch([
-              DB.prepare('DELETE FROM ballots'),
-              DB.prepare('DELETE FROM vote_items'),
-              DB.prepare('DELETE FROM comments')
-            ]);
+            try {
+              await DB.batch([
+                DB.prepare('DELETE FROM ballots'),
+                DB.prepare('DELETE FROM vote_items'),
+                DB.prepare('DELETE FROM comments')
+              ]);
+            } catch (e) {}
           }
 
           if (KV) {
@@ -740,7 +1186,7 @@ export default {
           const body = await request.json().catch(() => ({}));
           const { orderedIds } = body;
           if (Array.isArray(orderedIds)) {
-            let currentTopics = await getJsonKV(KV, 'topics', []);
+            let currentTopics = await getJsonKV(KV, 'topics', DEFAULT_TOPICS);
             const map = new Map(currentTopics.map(t => [t.id, t]));
             const nextTopics = [];
             for (const id of orderedIds) {
@@ -766,17 +1212,17 @@ export default {
             ? outline.map(s => (typeof s === 'object' ? s : String(s).trim())).filter(Boolean)
             : (typeof outline === 'string' ? outline.split('\n').map(s => s.trim()).filter(Boolean) : []);
 
-          let topics = await getJsonKV(KV, 'topics', []);
+          let topics = await getJsonKV(KV, 'topics', DEFAULT_TOPICS);
           const newTopic = {
             id: 'topic-' + Date.now().toString(36),
             title: title.trim(),
-            speaker: (speaker || '朋辈讲师').trim(),
+            speaker: (speaker || '墨澜 & 诙谐').trim(),
             category: (category || '通识探索').trim(),
             tag: (tag || '新议题').trim(),
-            duration: (duration || '45分钟讲解 + 15分钟互动').trim(),
+            duration: (duration || '45分钟 + 15分钟研讨').trim(),
             hook: (hook || '').trim(),
             summary: (summary || '').trim(),
-            outline: outlineArr.length > 0 ? outlineArr : [{ tag: '核心要点', desc: '主题内容筹备中...' }],
+            outline: outlineArr.length > 0 ? outlineArr : [],
             createdAt: new Date().toISOString()
           };
           topics.push(newTopic);
@@ -788,7 +1234,7 @@ export default {
         if (path.startsWith('/api/admin/topics/') && method === 'PUT') {
           const topicId = path.split('/')[4];
           const updates = await request.json().catch(() => ({}));
-          let topics = await getJsonKV(KV, 'topics', []);
+          let topics = await getJsonKV(KV, 'topics', DEFAULT_TOPICS);
           const idx = topics.findIndex(t => t.id === topicId);
           if (idx === -1) return jsonResponse({ error: '未找到对应社课议题' }, 404);
 
@@ -805,7 +1251,7 @@ export default {
         // DELETE /api/admin/topics/:id
         if (path.startsWith('/api/admin/topics/') && method === 'DELETE') {
           const topicId = path.split('/')[4];
-          let topics = await getJsonKV(KV, 'topics', []);
+          let topics = await getJsonKV(KV, 'topics', DEFAULT_TOPICS);
           topics = topics.filter(t => t.id !== topicId);
           await safePutKV(KV, 'topics', JSON.stringify(topics));
           return jsonResponse({ success: true, message: '社课议题已删除！' });
@@ -815,26 +1261,34 @@ export default {
         if (path === '/api/admin/backup' && method === 'GET') {
           const [settings, topics] = await Promise.all([
             getJsonKV(KV, 'settings', {}),
-            getJsonKV(KV, 'topics', [])
+            getJsonKV(KV, 'topics', DEFAULT_TOPICS)
           ]);
           let ballots = [];
           let comments = [];
           if (DB) {
-            const bRes = await DB.prepare('SELECT * FROM ballots ORDER BY voted_at DESC').all();
-            ballots = (bRes.results || []).map(b => ({
-              id: b.id,
-              voterToken: b.voter_token,
-              topicIds: JSON.parse(b.topic_ids || '[]'),
-              comment: b.comment,
-              clientIp: b.client_ip,
-              votedAt: b.voted_at
-            }));
-            const cRes = await DB.prepare('SELECT * FROM comments ORDER BY created_at DESC').all();
-            comments = cRes.results || [];
+            try {
+              const bRes = await DB.prepare('SELECT * FROM ballots ORDER BY voted_at DESC').all();
+              ballots = (bRes.results || []).map(b => ({
+                id: b.id,
+                voterToken: b.voter_token,
+                topicIds: JSON.parse(b.topic_ids || '[]'),
+                comment: b.comment,
+                clientIp: b.client_ip,
+                votedAt: b.voted_at
+              }));
+              const cRes = await DB.prepare('SELECT * FROM comments ORDER BY created_at DESC').all();
+              comments = cRes.results || [];
+            } catch (e) {}
+          }
+          if (ballots.length === 0 && KV) {
+            ballots = await getJsonKV(KV, 'ballots', []);
+          }
+          if (comments.length === 0 && KV) {
+            comments = await getJsonKV(KV, 'comments', []);
           }
           return jsonResponse({
             success: true,
-            version: '2.0-d1',
+            version: '2.5-d1-kv-permanent',
             exportedAt: new Date().toISOString(),
             data: { settings, topics, ballots, comments }
           });
@@ -847,25 +1301,40 @@ export default {
           if (!data) return jsonResponse({ error: '备份数据格式无效' }, 400);
           if (data.settings) await safePutKV(KV, 'settings', JSON.stringify(data.settings));
           if (data.topics && Array.isArray(data.topics)) await safePutKV(KV, 'topics', JSON.stringify(data.topics));
-          if (DB && data.ballots && Array.isArray(data.ballots)) {
-            const batch = [
-              DB.prepare('DELETE FROM ballots'),
-              DB.prepare('DELETE FROM vote_items')
-            ];
+          if (data.ballots && Array.isArray(data.ballots)) {
+            await safePutKV(KV, 'ballots', JSON.stringify(data.ballots));
             for (const b of data.ballots) {
-              const tids = b.topicIds || [];
-              batch.push(
-                DB.prepare('INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at) VALUES (?, ?, ?, ?, ?, ?)')
-                  .bind(b.id, b.voterToken, JSON.stringify(tids), b.comment || '', b.clientIp || '', b.votedAt || new Date().toISOString())
-              );
-              for (const tid of tids) {
-                batch.push(
-                  DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)')
-                    .bind(b.voterToken, tid, b.votedAt || new Date().toISOString())
-                );
+              if (b.voterToken) {
+                await safePutKV(KV, 'voter:' + b.voterToken, JSON.stringify(b));
               }
             }
-            await DB.batch(batch);
+          }
+          if (data.comments && Array.isArray(data.comments)) {
+            await safePutKV(KV, 'comments', JSON.stringify(data.comments));
+          }
+          if (DB && data.ballots && Array.isArray(data.ballots)) {
+            try {
+              const batch = [
+                DB.prepare('DELETE FROM ballots'),
+                DB.prepare('DELETE FROM vote_items')
+              ];
+              for (const b of data.ballots) {
+                const tids = b.topicIds || [];
+                batch.push(
+                  DB.prepare('INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at) VALUES (?, ?, ?, ?, ?, ?)')
+                    .bind(b.id, b.voterToken, JSON.stringify(tids), b.comment || '', b.clientIp || '', b.votedAt || new Date().toISOString())
+                );
+                for (const tid of tids) {
+                  batch.push(
+                    DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)')
+                      .bind(b.voterToken, tid, b.votedAt || new Date().toISOString())
+                  );
+                }
+              }
+              await DB.batch(batch);
+            } catch (e) {
+              console.warn('Restore D1 batch error:', e.message);
+            }
           }
           return jsonResponse({ success: true, message: '系统数据已成功从备份恢复！' });
         }
@@ -873,20 +1342,30 @@ export default {
         // GET /api/admin/diagnostics (系统边缘节点与数据监控)
         if (path === '/api/admin/diagnostics' && method === 'GET') {
           let counts = { ballots: 0, voteItems: 0, comments: 0 };
+          let d1Healthy = false;
           if (DB) {
-            const res = await DB.prepare(`
-              SELECT 
-                (SELECT COUNT(*) FROM ballots) as ballots,
-                (SELECT COUNT(*) FROM vote_items) as voteItems,
-                (SELECT COUNT(*) FROM comments) as comments
-            `).first();
-            if (res) counts = res;
+            try {
+              const res = await DB.prepare(`
+                SELECT 
+                  (SELECT COUNT(*) FROM ballots) as ballots,
+                  (SELECT COUNT(*) FROM vote_items) as voteItems,
+                  (SELECT COUNT(*) FROM comments) as comments
+              `).first();
+              if (res) {
+                counts = res;
+                d1Healthy = true;
+              }
+            } catch (e) {}
           }
+          const kvBallots = await getJsonKV(KV, 'ballots', []);
+          const kvComments = await getJsonKV(KV, 'comments', []);
           return jsonResponse({
             success: true,
-            engine: DB ? 'Cloudflare D1 (SQLite ACID)' : 'Cloudflare KV',
+            engine: DB ? 'Cloudflare D1 (SQLite ACID) + KV Hybrid' : 'Cloudflare KV Only',
+            d1Healthy,
             edgeLocation: request.cf?.colo || 'AMS',
             counts,
+            kvCounts: { ballots: kvBallots.length, comments: kvComments.length },
             timestamp: new Date().toISOString()
           });
         }

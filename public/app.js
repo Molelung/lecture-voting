@@ -2,20 +2,60 @@ const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
 createApp({
   setup() {
-    // 1. 设备匿名凭据（校园网友好，防刷防重复）
-    let storedToken = localStorage.getItem('lecture_voter_token');
+    // 安全读取与保存存储（防止 iOS 无痕模式或 Cookie 限制抛出异常导致整页白屏）
+    const getSafeStorage = (key) => {
+      try { return localStorage.getItem(key); } catch (e) { return null; }
+    };
+    const setSafeStorage = (key, val) => {
+      try { localStorage.setItem(key, val); } catch (e) {}
+    };
+    const getCookie = (name) => {
+      try {
+        const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+        return match ? decodeURIComponent(match[3]) : null;
+      } catch (e) { return null; }
+    };
+    const setCookie = (name, val, days = 365) => {
+      try {
+        const d = new Date();
+        d.setTime(d.getTime() + (days * 86400000));
+        document.cookie = `${name}=${encodeURIComponent(val)};expires=${d.toUTCString()};path=/;SameSite=Lax`;
+      } catch (e) {}
+    };
+
+    // 1. 设备匿名凭据（双轨 LocalStorage + Cookie 交叉恢复，防日期变更、防微信清理缓存）
+    let storedToken = getSafeStorage('lecture_voter_token') || getCookie('lecture_voter_token');
     if (!storedToken) {
       storedToken = 'voter-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
-      localStorage.setItem('lecture_voter_token', storedToken);
     }
+    setSafeStorage('lecture_voter_token', storedToken);
+    setCookie('lecture_voter_token', storedToken, 365);
     const voterToken = ref(storedToken);
+
+    // 本地持久化选票即时恢复（Instant Render，消除跨日访问与弱网加载时的空白跳闪）
+    const cachedBallot = getSafeStorage('lecture_voter_ballot');
+    let initialUserVote = null;
+    let initialHasVoted = false;
+    let initialSelectedTopicIds = [];
+    let initialVotingComment = '';
+    if (cachedBallot) {
+      try {
+        const parsed = JSON.parse(cachedBallot);
+        if (parsed && (parsed.topicIds || parsed.votedAt)) {
+          initialUserVote = parsed;
+          initialHasVoted = true;
+          initialSelectedTopicIds = Array.isArray(parsed.topicIds) ? [...parsed.topicIds] : [];
+          initialVotingComment = parsed.comment || '';
+        }
+      } catch (e) {}
+    }
 
     // 2. 状态管理
     const loading = ref(true);
-    const hasVoted = ref(false);
-    const userVote = ref(null);
-    const selectedTopicIds = ref([]);
-    const votingComment = ref('');
+    const hasVoted = ref(initialHasVoted);
+    const userVote = ref(initialUserVote);
+    const selectedTopicIds = ref(initialSelectedTopicIds);
+    const votingComment = ref(initialVotingComment);
     const showConfirmModal = ref(false);
     const submittingVote = ref(false);
 
@@ -377,31 +417,80 @@ createApp({
 
     let activeApiBase = IS_LOCAL ? '' : PRIMARY_API;
 
-    // API 请求封装
+    // API 请求封装（内置 10 秒超时中断、多通道凭据透传与主备双节点无感热切换）
     const api = async (url, options = {}) => {
       const headers = {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
         'X-Voter-Token': voterToken.value,
         ...(adminToken.value ? { 'Authorization': `Bearer ${adminToken.value}` } : {}),
         ...options.headers
       };
 
-      const doFetch = async (baseUrl) => {
-        const fullUrl = url.startsWith('/api') && baseUrl ? `${baseUrl}${url}` : url;
-        const res = await fetch(fullUrl, { ...options, headers });
-        let data = {};
+      // 强化：请求体自动补充 voterToken，防止透明代理剥离自定义请求头
+      let bodyData = options.body;
+      if (bodyData && typeof bodyData === 'string' && options.method && options.method !== 'GET') {
         try {
-          data = await res.json();
-        } catch (e) {
-          data = { error: '返回数据解析异常' };
-        }
-        if (!res.ok) {
-          const err = new Error(data.error || `请求服务异常 (${res.status})`);
-          err.status = res.status;
-          err.data = data;
+          const parsed = JSON.parse(bodyData);
+          if (parsed && typeof parsed === 'object' && !parsed.voterToken) {
+            parsed.voterToken = voterToken.value;
+            bodyData = JSON.stringify(parsed);
+          }
+        } catch (e) {}
+      }
+
+      // 强化：URL 自动附带 query voterToken 参数作为第三重备份
+      let targetUrl = url;
+      if (targetUrl.startsWith('/api') && !targetUrl.includes('voterToken=') && voterToken.value) {
+        targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'voterToken=' + encodeURIComponent(voterToken.value);
+      }
+
+      const doFetch = async (baseUrl) => {
+        const fullUrl = targetUrl.startsWith('/api') && baseUrl ? `${baseUrl}${targetUrl}` : targetUrl;
+        
+        // 10 秒超时中断控制器，彻底解决弱网挂起卡住问题
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        try {
+          const res = await fetch(fullUrl, {
+            ...options,
+            body: bodyData,
+            headers,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          let data = {};
+          try {
+            data = await res.json();
+          } catch (e) {
+            data = { error: '返回数据解析异常' };
+          }
+
+          if (!res.ok) {
+            const err = new Error(data.error || `请求服务异常 (${res.status})`);
+            err.status = res.status;
+            err.data = data;
+            throw err;
+          }
+
+          // 如果响应中返回了确认的 voterToken，双向对齐保存
+          if (data && data.voterToken && data.voterToken !== voterToken.value) {
+            voterToken.value = data.voterToken;
+            setSafeStorage('lecture_voter_token', data.voterToken);
+            setCookie('lecture_voter_token', data.voterToken, 365);
+          }
+
+          return data;
+        } catch (err) {
+          clearTimeout(timeoutId);
+          if (err.name === 'AbortError') {
+            const timeoutErr = new Error('网络请求超时，请检查校园网/移动网络连接');
+            timeoutErr.status = 408;
+            throw timeoutErr;
+          }
           throw err;
         }
-        return data;
       };
 
       try {
@@ -413,10 +502,10 @@ createApp({
           throw err;
         }
 
-        // 仅在主域名出现断网/DNS解析失败/502网关异常时，无感切换至备用直连域名
+        // 仅在主域名出现断网/DNS解析失败/502网关异常/超时(408)时，无感切换至备用直连域名
         if (!IS_LOCAL && activeApiBase === PRIMARY_API) {
           try {
-            console.warn('主接入点网络波动，正在无感切换至备用节点...', err.message);
+            console.warn('主接入点网络波动或超时，正在无感切换至备用节点...', err.message);
             const data = await doFetch(FALLBACK_API);
             activeApiBase = FALLBACK_API;
             return data;
@@ -430,7 +519,7 @@ createApp({
       }
     };
 
-    // 初始化数据加载
+    // 初始化数据加载（双轨同步）
     const initData = async () => {
       loading.value = true;
       try {
@@ -445,6 +534,13 @@ createApp({
         hasVoted.value = res.hasVoted;
         userVote.value = res.userVote;
         statsSummary.value = res.statsSummary || { totalVoters: 0, totalVotesCast: null };
+
+        // 同步本地持久化选票：若已投票则保存，若未投票（如被重置）则清理
+        if (res.hasVoted && res.userVote) {
+          setSafeStorage('lecture_voter_ballot', JSON.stringify(res.userVote));
+        } else if (!res.hasVoted) {
+          try { localStorage.removeItem('lecture_voter_ballot'); } catch (e) {}
+        }
 
         // 如果用户本设备已投过票，回显之前选中的选项
         if (userVote.value && userVote.value.topicIds) {
@@ -551,10 +647,11 @@ createApp({
       }
     };
 
-    // 格式化时间
+    // 格式化时间（防御性容错）
     const formatTime = (isoString) => {
       if (!isoString) return '刚刚';
       const d = new Date(isoString);
+      if (isNaN(d.getTime())) return '刚刚';
       const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
       if (diffMin < 2) return '刚刚';
       if (diffMin < 60) return `${diffMin}分钟前`;
@@ -817,6 +914,7 @@ createApp({
         const res = await api('/api/vote', {
           method: 'POST',
           body: JSON.stringify({
+            voterToken: voterToken.value,
             topicIds: selectedTopicIds.value,
             comment: votingComment.value
           })
@@ -830,6 +928,10 @@ createApp({
 
         hasVoted.value = true;
         userVote.value = res.vote;
+        // 即时写入本地存储，确保离线、跨日访问毫秒级渲染
+        if (res.vote) {
+          setSafeStorage('lecture_voter_ballot', JSON.stringify(res.vote));
+        }
         showConfirmModal.value = false;
 
         // 即刻解锁票数与热度排行榜及公共讨论区
