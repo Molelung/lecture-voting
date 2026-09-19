@@ -2,7 +2,7 @@
  * Cloudflare Worker API for Peer Lecture Voting System
  * 终极高可用架构：KV + D1 双引擎极速混合架构 (Hybrid ACID + Edge KV)
  * 1. 事务级强一致性并发（Cloudflare D1 SQLite Engine）：
- *    - 投票核心写入采用 D1 关系型数据库事务 (ACID)，杜绝多进程/分布式读写冲突 (Race Condition)；
+ *    - 投票核心写入采用 D1 关系型数据库事务 (ACID) 与微重试保障机制；
  *    - 无论多少位同学在同一毫秒点击提交，SQL 引擎自动排队原子提交，丢票率严格为 0，覆盖率为 0！
  * 2. 毫秒级极速聚合（Real-Time SQL Aggregation）：
  *    - 各议题实时票数通过 `SELECT topic_id, COUNT(*) FROM vote_items GROUP BY topic_id` 瞬时聚合计算；
@@ -10,7 +10,8 @@
  * 3. 双轨高可用与边缘容灾（Dual-Engine Fallback）：
  *    - 同时向 D1 与 KV 双写备份，若任何单一引擎出现边缘波动，自动无缝降级平滑切换；
  *    - 议题列表与系统配置在 KV 中提供毫秒级边缘读取，读写性能与抗压能力达到生产最高标准；
- *    - 选民与选票数据永久存储（Zero TTL），永不随日期跨度、午夜翻转或时间推移而清空或失效。
+ *    - 选民与选票数据永久存储（Zero TTL），永不随日期跨度、午夜翻转或时间推移而清空或失效；
+ *    - 提供 /api/admin/sync 一键自愈与双引擎数据全量校验对准。
  * 4. 校园网 NAT 穿透友好限流与多通道凭据识别：
  *    - 支持 Header (X-Voter-Token)、Body (voterToken) 与 Query (voterToken) 三通道凭据透传，彻底免疫透明网关头剥离；
  *    - 设备 Token 级防刷，配合公网 IP 宽容上限，彻底避免同寝室/同教室同学共用 Wi-Fi 被误伤拦截。
@@ -19,7 +20,7 @@
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Voter-Token',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Voter-Token, Cache-Control, Pragma, Accept, x-voter-token',
   'Access-Control-Max-Age': '86400',
   'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
   'X-Content-Type-Options': 'nosniff',
@@ -311,6 +312,22 @@ function checkIpRateLimit(ip, limit = 250, windowMs = 60000) {
   return true;
 }
 
+// 异步操作微重试器（有效化解边缘网络波动与 SQLite 瞬时锁竞争）
+async function executeWithRetry(fn, retries = 2, delayMs = 40) {
+  let lastErr = null;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < retries) {
+        await new Promise(r => setTimeout(r, delayMs * Math.pow(2, i)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 function base64UrlEncode(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = '';
@@ -388,6 +405,14 @@ export default {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
+    // 防护：检查 Payload 尺寸，杜绝超大 Body 耗尽 Worker 边缘内存
+    if (method === 'POST' || method === 'PUT') {
+      const contentLength = request.headers.get('content-length');
+      if (contentLength && parseInt(contentLength, 10) > 65536) {
+        return jsonResponse({ error: '请求数据体积超限' }, 413);
+      }
+    }
+
     const KV = env.LECTURE_KV || env.VOTING_KV || env.LECTURE_VOTING_KV;
     const DB = env.DB; // Cloudflare D1 Database Binding
 
@@ -398,7 +423,7 @@ export default {
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
     
     // 多通道捕获选民标识：请求头 > URL Query 参数
-    let voterToken = request.headers.get('X-Voter-Token') || url.searchParams.get('voterToken') || '';
+    let voterToken = request.headers.get('X-Voter-Token') || request.headers.get('x-voter-token') || url.searchParams.get('voterToken') || '';
     const adminUser = parseUserFromHeader(request);
     const isAdmin = !!(adminUser && adminUser.role === 'admin');
 
@@ -785,43 +810,45 @@ export default {
           }
         }
 
-        // 1. D1 事务写入：100% ACID 强一致性保证，绝无并发覆盖丢票！
+        // 1. D1 事务写入（带微重试机制与 100% ACID 强一致性保证）
         let d1WriteSuccess = false;
         if (DB) {
           try {
-            const statements = [
-              DB.prepare(`
-                INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(voter_token) DO UPDATE SET
-                  topic_ids = excluded.topic_ids,
-                  comment = excluded.comment,
-                  client_ip = excluded.client_ip,
-                  voted_at = excluded.voted_at
-              `).bind(ballotId, clientToken, JSON.stringify(topicIds), cleanComment, clientIp.slice(0, 16), votedAt),
-              DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(clientToken)
-            ];
-
-            for (const tid of topicIds) {
-              statements.push(
-                DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)').bind(clientToken, tid, votedAt)
-              );
-            }
-
-            if (cleanComment) {
-              const cmtId = 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-              statements.push(
+            await executeWithRetry(async () => {
+              const statements = [
                 DB.prepare(`
-                  INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?)
-                `).bind(cmtId, topicIds[0] || 'general', topicMap[topicIds[0]] || '', clientToken, '同学', cleanComment, votedAt)
-              );
-            }
+                  INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at)
+                  VALUES (?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(voter_token) DO UPDATE SET
+                    topic_ids = excluded.topic_ids,
+                    comment = excluded.comment,
+                    client_ip = excluded.client_ip,
+                    voted_at = excluded.voted_at
+                `).bind(ballotId, clientToken, JSON.stringify(topicIds), cleanComment, clientIp.slice(0, 16), votedAt),
+                DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(clientToken)
+              ];
 
-            await DB.batch(statements);
+              for (const tid of topicIds) {
+                statements.push(
+                  DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)').bind(clientToken, tid, votedAt)
+                );
+              }
+
+              if (cleanComment) {
+                const cmtId = 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+                statements.push(
+                  DB.prepare(`
+                    INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                  `).bind(cmtId, topicIds[0] || 'general', topicMap[topicIds[0]] || '', clientToken, '同学', cleanComment, votedAt)
+                );
+              }
+
+              await DB.batch(statements);
+            }, 2, 40);
             d1WriteSuccess = true;
           } catch (d1Err) {
-            console.error('D1 batch write error, triggering synchronous KV fallback:', d1Err.message);
+            console.error('D1 batch write error after retries, triggering synchronous KV fallback:', d1Err.message);
           }
         }
 
@@ -943,10 +970,12 @@ export default {
           let d1Success = false;
           if (DB) {
             try {
-              await DB.prepare(`
-                INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-              `).bind(cmtId, topicId, topicTitle, authorToken, cleanAuthor, cleanText, createdAt).run();
+              await executeWithRetry(async () => {
+                await DB.prepare(`
+                  INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                `).bind(cmtId, topicId, topicTitle, authorToken, cleanAuthor, cleanText, createdAt).run();
+              }, 2, 40);
               d1Success = true;
             } catch (e) {
               console.warn('D1 insert comment error, fallback to KV:', e.message);
@@ -1048,10 +1077,12 @@ export default {
 
           if (DB) {
             try {
-              await DB.prepare(`
-                INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-              `).bind(cmtId, topicId, '', authorToken, cleanAuthor, cleanText, createdAt).run();
+              await executeWithRetry(async () => {
+                await DB.prepare(`
+                  INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                `).bind(cmtId, topicId, '', authorToken, cleanAuthor, cleanText, createdAt).run();
+              }, 2, 40);
             } catch (e) {}
           }
 
@@ -1093,6 +1124,64 @@ export default {
       // 8. 管理员核心配置与数据生命周期管理
       if (path.startsWith('/api/admin')) {
         if (!isAdmin) return jsonResponse({ error: '需要管理员权限' }, 403);
+
+        // POST /api/admin/sync (全量对齐 D1 与 KV 数据状态，一键自愈)
+        if (path === '/api/admin/sync' && method === 'POST') {
+          let d1Count = 0;
+          let kvCount = 0;
+          let syncedComments = 0;
+          if (DB) {
+            try {
+              const bRes = await DB.prepare('SELECT * FROM ballots ORDER BY voted_at DESC').all();
+              const rawBallots = bRes.results || [];
+              d1Count = rawBallots.length;
+              if (KV && rawBallots.length > 0) {
+                const formatted = rawBallots.map(b => ({
+                  id: b.id,
+                  voterId: b.voter_token,
+                  voterToken: b.voter_token,
+                  topicIds: JSON.parse(b.topic_ids || '[]'),
+                  comment: b.comment || '',
+                  clientIp: b.client_ip || '',
+                  votedAt: b.voted_at
+                }));
+                await safePutKV(KV, 'ballots', JSON.stringify(formatted));
+                for (const b of formatted) {
+                  await safePutKV(KV, 'voter:' + b.voterToken, JSON.stringify(b));
+                }
+              }
+
+              const cRes = await DB.prepare('SELECT * FROM comments ORDER BY created_at DESC LIMIT 200').all();
+              if (KV && cRes.results && cRes.results.length > 0) {
+                syncedComments = cRes.results.length;
+                const formattedComments = cRes.results.map(c => ({
+                  id: c.id,
+                  topicId: c.topic_id || 'general',
+                  topicTitle: c.topic_title || '',
+                  voterId: c.voter_token,
+                  authorName: c.author_name || '同学',
+                  text: c.text,
+                  createdAt: c.created_at
+                }));
+                await safePutKV(KV, 'comments', JSON.stringify(formattedComments));
+              }
+            } catch (e) {
+              return jsonResponse({ error: 'D1 读取对齐失败: ' + e.message }, 500);
+            }
+          }
+          if (KV) {
+            const kvB = await getJsonKV(KV, 'ballots', []);
+            kvCount = kvB.length;
+          }
+          return jsonResponse({
+            success: true,
+            message: 'D1 与 KV 双引擎全量选票与留言已成功对齐对准！',
+            d1BallotsCount: d1Count,
+            kvBallotsCount: kvCount,
+            syncedCommentsCount: syncedComments,
+            timestamp: new Date().toISOString()
+          });
+        }
 
         // GET /api/admin/ballots (查看所有选票明细)
         if (path === '/api/admin/ballots' && method === 'GET') {
@@ -1294,7 +1383,7 @@ export default {
           });
         }
 
-        // POST /api/admin/restore (从备份中恢复全量数据)
+        // POST /api/admin/restore (从备份中恢复全量数据，采用 50 语句安全切片)
         if (path === '/api/admin/restore' && method === 'POST') {
           const body = await request.json().catch(() => ({}));
           const { data } = body;
@@ -1314,24 +1403,28 @@ export default {
           }
           if (DB && data.ballots && Array.isArray(data.ballots)) {
             try {
-              const batch = [
+              const allStatements = [
                 DB.prepare('DELETE FROM ballots'),
                 DB.prepare('DELETE FROM vote_items')
               ];
               for (const b of data.ballots) {
                 const tids = b.topicIds || [];
-                batch.push(
+                allStatements.push(
                   DB.prepare('INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at) VALUES (?, ?, ?, ?, ?, ?)')
                     .bind(b.id, b.voterToken, JSON.stringify(tids), b.comment || '', b.clientIp || '', b.votedAt || new Date().toISOString())
                 );
                 for (const tid of tids) {
-                  batch.push(
+                  allStatements.push(
                     DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)')
                       .bind(b.voterToken, tid, b.votedAt || new Date().toISOString())
                   );
                 }
               }
-              await DB.batch(batch);
+              // 50 条切片批次执行，彻底规避 D1 batch 限制
+              for (let i = 0; i < allStatements.length; i += 50) {
+                const chunk = allStatements.slice(i, i + 50);
+                await DB.batch(chunk);
+              }
             } catch (e) {
               console.warn('Restore D1 batch error:', e.message);
             }

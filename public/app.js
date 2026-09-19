@@ -489,12 +489,23 @@ createApp({
             timeoutErr.status = 408;
             throw timeoutErr;
           }
-          throw err;
+        }
+      };
+
+      const doFetchWithJitter = async (baseUrl) => {
+        try {
+          return await doFetch(baseUrl);
+        } catch (err) {
+          // 4xx 业务错误无需重试
+          if (err.status && err.status >= 400 && err.status < 500) throw err;
+          // 移动蜂窝基站/Wi-Fi 微抖动：等待 350ms 后原位极速重试 1 次
+          await new Promise(r => setTimeout(r, 350));
+          return await doFetch(baseUrl);
         }
       };
 
       try {
-        return await doFetch(activeApiBase);
+        return await doFetchWithJitter(activeApiBase);
       } catch (err) {
         // 如果是 HTTP 4xx 业务级错误（如参数不全、密码错误、达到最大投票数等），说明服务完全畅通，绝对不触发节点切换
         if (err.status && err.status >= 400 && err.status < 500) {
@@ -502,12 +513,13 @@ createApp({
           throw err;
         }
 
-        // 仅在主域名出现断网/DNS解析失败/502网关异常/超时(408)时，无感切换至备用直连域名
-        if (!IS_LOCAL && activeApiBase === PRIMARY_API) {
+        // 仅在主域名出现断网/DNS解析失败/502网关异常/超时(408)时，无感热切换至对端节点
+        if (!IS_LOCAL) {
+          const alternateBase = activeApiBase === PRIMARY_API ? FALLBACK_API : PRIMARY_API;
           try {
-            console.warn('主接入点网络波动或超时，正在无感切换至备用节点...', err.message);
-            const data = await doFetch(FALLBACK_API);
-            activeApiBase = FALLBACK_API;
+            console.warn('当前接入点波动或超时，正在无感切换至对端备份节点...', alternateBase);
+            const data = await doFetchWithJitter(alternateBase);
+            activeApiBase = alternateBase;
             return data;
           } catch (fallbackErr) {
             showToast(fallbackErr.message || err.message, 'error');
@@ -940,6 +952,18 @@ createApp({
         await loadPublicComments();
       } catch (err) {
         console.error('投票失败:', err);
+        // 如果是断网或网络超时无响应，自动保存至离线队列，网络恢复时自愈同步
+        if (!err.status || err.status >= 500 || err.status === 408) {
+          const pendingData = {
+            voterToken: voterToken.value,
+            topicIds: [...selectedTopicIds.value],
+            comment: votingComment.value,
+            timestamp: Date.now()
+          };
+          setSafeStorage('lecture_pending_vote', JSON.stringify(pendingData));
+          showToast('当前网络连接中断，已为您安全暂存选票！网络恢复后将自动为您重试提交', 'info');
+          showConfirmModal.value = false;
+        }
       } finally {
         submittingVote.value = false;
       }
@@ -1518,16 +1542,58 @@ createApp({
       }
     };
 
+    // 离线暂存选票自动检查与自愈投递
+    const checkAndSyncPendingVote = async () => {
+      const raw = getSafeStorage('lecture_pending_vote');
+      if (!raw) return;
+      try {
+        const pending = JSON.parse(raw);
+        if (pending && pending.topicIds && pending.topicIds.length > 0) {
+          const res = await api('/api/vote', {
+            method: 'POST',
+            body: JSON.stringify({
+              voterToken: pending.voterToken || voterToken.value,
+              topicIds: pending.topicIds,
+              comment: pending.comment || ''
+            })
+          });
+          try { localStorage.removeItem('lecture_pending_vote'); } catch (e) {}
+          if (res && res.vote) {
+            hasVoted.value = true;
+            userVote.value = res.vote;
+            setSafeStorage('lecture_voter_ballot', JSON.stringify(res.vote));
+            showToast('网络已恢复，您的暂存选票已成功同步并入账！', 'success');
+            await loadTopics();
+            await loadResults();
+            await loadPublicComments();
+          }
+        }
+      } catch (e) {
+        // 网络依然未就绪，保持暂存状态等待下一次联网触发
+      }
+    };
+
     onMounted(() => {
       initData();
+      checkAndSyncPendingVote();
+      if (typeof window !== 'undefined') {
+        window.addEventListener('online', () => {
+          checkAndSyncPendingVote();
+          refreshLiveState();
+        });
+      }
       if (typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible') {
             refreshLiveState();
+            checkAndSyncPendingVote();
           }
         });
       }
-      setInterval(refreshLiveState, 25000);
+      setInterval(() => {
+        refreshLiveState();
+        checkAndSyncPendingVote();
+      }, 25000);
     });
 
     return {
