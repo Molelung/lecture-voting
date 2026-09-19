@@ -591,9 +591,8 @@
                     <span>投后可见</span>
                   </span>
                 </div>
-                <div class="w-full bg-[#e9e9e7] h-1.5 rounded-full overflow-hidden">
+                <div v-if="canSeeResults" class="w-full bg-[#e9e9e7] h-1.5 rounded-full overflow-hidden">
                   <div 
-                    v-if="canSeeResults"
                     class="bg-[#2f3437] h-full rounded-full transition-all duration-500"
                     :style="{ width: t.percentage + '%' }">
                   </div>
