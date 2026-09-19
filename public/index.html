@@ -9,6 +9,41 @@
   <title>朋辈社课大投票！</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
 
+  <!-- 老入口（GitHub Pages）自动升级到 Cloudflare 边缘域名。
+       放在最前面执行：确认新线路可用后立刻跳走，同学们不用先在这里下载完几百 KB 的资源。
+       投票身份按域名存在 localStorage 里，所以顺带把老域名上的设备凭据通过 URL 片段带过去
+       （片段不会进服务端日志，落地页读完立即抹掉），避免老同学被当成新设备重复投票。 -->
+  <script>
+    (function () {
+      try {
+        if (location.hostname !== 'molelung.github.io') return;
+        if (new URLSearchParams(location.search).has('stay')) return;
+        var failedAt = Number(localStorage.getItem('lecture_handoff_failed_at') || 0);
+        if (Date.now() - failedAt < 30 * 60 * 1000) return;
+
+        var target = 'https://vote.molan.cc.cd';
+        var ctrl = new AbortController();
+        var timer = setTimeout(function () { ctrl.abort(); }, 2500);
+        fetch(target + '/api/health', { signal: ctrl.signal, cache: 'no-store' })
+          .then(function (res) {
+            clearTimeout(timer);
+            if (!res.ok) throw new Error('target unavailable');
+            var token = null;
+            try { token = localStorage.getItem('lecture_voter_token'); } catch (e) {}
+            if (!token) {
+              var m = document.cookie.match(/(^|;\s*)lecture_voter_token=([^;]*)/);
+              if (m) { try { token = decodeURIComponent(m[2]); } catch (e) {} }
+            }
+            location.replace(target + '/' + (token ? '#t=' + encodeURIComponent(token) : ''));
+          })
+          .catch(function () {
+            clearTimeout(timer);
+            try { localStorage.setItem('lecture_handoff_failed_at', String(Date.now())); } catch (e) {}
+          });
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- 本地静态资源（秒开零延迟） -->
   <script src="./vendor/tailwindcss.js"></script>
   <script>

@@ -1,38 +1,3 @@
-// 老入口（GitHub Pages）自动升级到 Cloudflare 边缘域名。
-// 页面本身在两个域名上是同一份代码，但投票身份是按域名存在 localStorage 里的，
-// 所以换域名时必须把老域名上的设备凭据一起带过去，否则老同学会被当成新设备重复投票。
-// 放在最前面执行，避免旧页面先渲染一遍再跳走。
-const HANDOFF_HOST = 'molelung.github.io';
-const HANDOFF_TARGET = 'https://vote.molan.cc.cd';
-(async () => {
-  try {
-    if (typeof window === 'undefined' || window.location.hostname !== HANDOFF_HOST) return;
-    if (new URLSearchParams(window.location.search).has('stay')) return;
-    // 升级失败（例如备用线路也不通）后 30 分钟内不再探测，避免每次打开都白等
-    let failedAt = 0;
-    try { failedAt = Number(localStorage.getItem('lecture_handoff_failed_at') || 0); } catch (e) {}
-    if (Date.now() - failedAt < 30 * 60 * 1000) return;
-
-    // 先确认新线路确实可用再跳，避免把人送到打不开的地址
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(HANDOFF_TARGET + '/api/health', { signal: controller.signal, cache: 'no-store' });
-    clearTimeout(timer);
-    if (!res.ok) throw new Error('target unavailable');
-
-    let token = null;
-    try { token = localStorage.getItem('lecture_voter_token'); } catch (e) {}
-    if (!token) {
-      const m = document.cookie.match(/(^|;\s*)lecture_voter_token=([^;]*)/);
-      if (m) { try { token = decodeURIComponent(m[2]); } catch (e) {} }
-    }
-    // 凭据走 URL 片段：不会出现在服务端日志里，落地后立刻抹掉
-    window.location.replace(HANDOFF_TARGET + '/' + (token ? '#t=' + encodeURIComponent(token) : ''));
-  } catch (e) {
-    try { localStorage.setItem('lecture_handoff_failed_at', String(Date.now())); } catch (e2) {}
-  }
-})();
-
 const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
 createApp({
