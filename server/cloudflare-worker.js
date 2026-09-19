@@ -922,6 +922,113 @@ async function serveStaticAsset(request, ctx, path) {
   return staticUnavailablePage(new URL(request.url).hostname);
 }
 
+// ── 群二维码：可在管理后台上传替换 ───────────────────────────────────────────
+// 存在 KV 里（二进制 + metadata 记录类型与时间），没上传过就回落到仓库自带的默认图。
+const GROUP_QR_KEY = 'group_qr';
+const GROUP_QR_MAX_BYTES = 2 * 1024 * 1024;
+
+// 只认真正的图片：按文件头判断，避免把别的内容当图片存进去
+function detectImageType(bytes) {
+  if (!bytes || bytes.length < 12) return null;
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  const riff = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+  const webp = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+  if (riff === 'RIFF' && webp === 'WEBP') return 'image/webp';
+  return null;
+}
+
+async function getGroupQrOverride(KV) {
+  if (!KV) return null;
+  try {
+    const res = await KV.getWithMetadata(GROUP_QR_KEY, 'arrayBuffer');
+    if (!res || !res.value) return null;
+    return { bytes: res.value, metadata: res.metadata || {} };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function serveGroupQr(request, env, ctx) {
+  const KV = env.LECTURE_KV || env.VOTING_KV || env.LECTURE_VOTING_KV;
+  const override = await getGroupQrOverride(KV);
+  const isHead = request.method === 'HEAD';
+  if (override) {
+    return new Response(isHead ? null : override.bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': override.metadata.contentType || 'image/png',
+        // 换图要尽快生效，所以只给很短的浏览器缓存
+        'Cache-Control': 'public, max-age=30',
+        'X-Group-Qr': 'custom',
+        'X-Content-Type-Options': 'nosniff'
+      }
+    });
+  }
+  // 没有上传过 → 走原来的静态转发（仓库里的默认图，带边缘缓存）
+  const res = await serveStaticAsset(request, ctx, '/wechat-group-qr.png');
+  const headers = new Headers(res.headers);
+  headers.set('X-Group-Qr', 'default');
+  return new Response(res.body, { status: res.status, headers });
+}
+
+async function handleGroupQrAdmin(request, KV, method, jsonResponse) {
+  if (method === 'GET') {
+    const override = await getGroupQrOverride(KV);
+    return jsonResponse({
+      success: true,
+      custom: !!override,
+      contentType: override ? (override.metadata.contentType || 'image/png') : '',
+      bytes: override ? (override.metadata.bytes || override.bytes.byteLength) : 0,
+      updatedAt: override ? (override.metadata.updatedAt || '') : '',
+      maxBytes: GROUP_QR_MAX_BYTES
+    });
+  }
+
+  if (method === 'DELETE') {
+    await KV.delete(GROUP_QR_KEY).catch(() => {});
+    return jsonResponse({ success: true, message: '已恢复为仓库自带的默认二维码' });
+  }
+
+  if (method === 'POST' || method === 'PUT') {
+    let buf;
+    try {
+      buf = await request.arrayBuffer();
+    } catch (e) {
+      return jsonResponse({ error: '读取上传内容失败' }, 400);
+    }
+    if (!buf || buf.byteLength === 0) {
+      return jsonResponse({ error: '没有收到图片内容' }, 400);
+    }
+    if (buf.byteLength > GROUP_QR_MAX_BYTES) {
+      return jsonResponse({ error: `图片过大（${Math.round(buf.byteLength / 1024)}KB），请压到 ${GROUP_QR_MAX_BYTES / 1024 / 1024}MB 以内` }, 413);
+    }
+    const bytes = new Uint8Array(buf);
+    const contentType = detectImageType(bytes);
+    if (!contentType) {
+      return jsonResponse({ error: '只支持 PNG / JPG / WebP 图片' }, 400);
+    }
+    const metadata = {
+      contentType,
+      bytes: buf.byteLength,
+      updatedAt: new Date().toISOString()
+    };
+    try {
+      await KV.put(GROUP_QR_KEY, buf, { metadata });
+    } catch (e) {
+      return jsonResponse({ error: '保存失败，请稍后重试' }, 500);
+    }
+    return jsonResponse({
+      success: true,
+      message: '群二维码已更新，同学们下次打开就会看到新图（约 30 秒内全网生效）',
+      custom: true,
+      ...metadata
+    });
+  }
+
+  return jsonResponse({ error: '不支持的方法' }, 405);
+}
+
 async function handleRequest(request, env, ctx) {
     const startTime = Date.now();
     const url = new URL(request.url);
@@ -932,13 +1039,20 @@ async function handleRequest(request, env, ctx) {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
+    // 群二维码：管理员可在后台替换。上传过就用上传的，没上传过就用仓库里的默认图。
+    // 只在弹窗展示时才被请求（频率极低），所以这里每次都读 KV，换来"换图立刻生效"。
+    if (path === '/wechat-group-qr.png' && (method === 'GET' || method === 'HEAD')) {
+      return serveGroupQr(request, env, ctx);
+    }
+
     // 非 /api 路径：直接由边缘发出前台页面与静态资源（与 API 同源，弱网更稳、免跨域预检）
     if (!path.startsWith('/api/') && (method === 'GET' || method === 'HEAD')) {
       return serveStaticAsset(request, ctx, path);
     }
 
     // 防护：检查 Payload 尺寸，杜绝超大 Body 耗尽 Worker 边缘内存
-    if (method === 'POST' || method === 'PUT') {
+    // （群二维码上传走独立的大小校验，因为图片本身就有几百 KB）
+    if ((method === 'POST' || method === 'PUT') && path !== '/api/admin/group-qr') {
       const contentLength = request.headers.get('content-length');
       if (contentLength && parseInt(contentLength, 10) > 65536) {
         return jsonResponse({ error: '请求数据体积超限' }, 413);
@@ -2268,6 +2382,11 @@ async function handleRequest(request, env, ctx) {
           }
 
           return jsonResponse({ error: '未知的修复动作，支持 import-missing / drop-kv-orphans / rebind-voter' }, 400);
+        }
+
+        // 群二维码上传 / 替换 / 恢复默认（管理后台用，无需改仓库）
+        if (path === '/api/admin/group-qr') {
+          return handleGroupQrAdmin(request, KV, method, jsonResponse);
         }
 
         // GET /api/admin/backup (系统全量数据备份)

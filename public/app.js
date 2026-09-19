@@ -1315,6 +1315,112 @@ createApp({
       } catch (e) {}
     };
 
+    // ── 社课群二维码：后台上传替换（微信群码 7 天过期，换图不用改代码）──────────
+    const groupQrInfo = ref({ custom: false, updatedAt: '', bytes: 0 });
+    const uploadingGroupQr = ref(false);
+    const groupQrInputRef = ref(null);
+    // 加个时间戳做缓存破除，上传后能立刻看到新图（其它同学最多等 30 秒）
+    const groupQrPreviewUrl = ref('./wechat-group-qr.png');
+    const groupQrUrlLive = ref('./wechat-group-qr.png');
+
+    const loadGroupQrInfo = async () => {
+      try {
+        const res = await api('/api/admin/group-qr');
+        groupQrInfo.value = {
+          custom: !!res.custom,
+          updatedAt: res.updatedAt || '',
+          bytes: res.bytes || 0
+        };
+        if (res.updatedAt) {
+          groupQrPreviewUrl.value = './wechat-group-qr.png?v=' + encodeURIComponent(res.updatedAt);
+          groupQrUrlLive.value = './wechat-group-qr.png?v=' + encodeURIComponent(res.updatedAt);
+        } else {
+          groupQrPreviewUrl.value = './wechat-group-qr.png';
+          groupQrUrlLive.value = './wechat-group-qr.png';
+        }
+      } catch (e) {}
+    };
+
+    const pickGroupQr = () => {
+      if (groupQrInputRef.value) groupQrInputRef.value.click();
+    };
+
+    // 手机拍/截的图动辄几 MB，先在浏览器里等比缩到 900px 内并转成 PNG，
+    // 二维码不需要更高分辨率，缩完通常只剩几十 KB，上传和加载都更快
+    const optimizeQrImage = (file) => new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const MAX = 900;
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          const width = Math.max(1, Math.round(img.width * scale));
+          const height = Math.max(1, Math.round(img.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((blob) => {
+            URL.revokeObjectURL(objectUrl);
+            if (blob) resolve(blob);
+            else reject(new Error('图片处理失败'));
+          }, 'image/png');
+        } catch (e) {
+          URL.revokeObjectURL(objectUrl);
+          reject(e);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('图片读取失败，请换一张试试'));
+      };
+      img.src = objectUrl;
+    });
+
+    const uploadGroupQr = async (event) => {
+      const input = event.target;
+      const file = input && input.files && input.files[0];
+      if (!file) return;
+      uploadingGroupQr.value = true;
+      try {
+        const blob = await optimizeQrImage(file);
+        if (blob.size > 2 * 1024 * 1024) {
+          showToast('图片还是太大，请裁小一点再传', 'warning');
+          return;
+        }
+        const res = await api('/api/admin/group-qr', {
+          method: 'POST',
+          body: blob,
+          headers: { 'Content-Type': blob.type || 'image/png' }
+        });
+        showToast(res.message || '群二维码已更新', 'success');
+        await loadGroupQrInfo();
+      } catch (e) {
+        showToast(e.message || '上传失败，请稍后重试', 'error');
+      } finally {
+        uploadingGroupQr.value = false;
+        if (input) input.value = '';
+      }
+    };
+
+    const resetGroupQr = async () => {
+      uploadingGroupQr.value = true;
+      try {
+        const res = await api('/api/admin/group-qr', { method: 'DELETE' });
+        showToast(res.message || '已恢复默认二维码', 'success');
+        await loadGroupQrInfo();
+      } catch (e) {
+        showToast(e.message || '操作失败，请稍后重试', 'error');
+      } finally {
+        uploadingGroupQr.value = false;
+      }
+    };
+
     const openAdminModal = () => {
       showAdminModal.value = true;
       initAdminSettingsForm();
@@ -1322,6 +1428,7 @@ createApp({
         loadBallots();
         loadPublicComments();
         loadDiagnostics();
+        loadGroupQrInfo();
       }
     };
 
@@ -1340,6 +1447,7 @@ createApp({
         loadResults();
         loadPublicComments();
         loadDiagnostics();
+        loadGroupQrInfo();
       } catch (e) {
         showToast(e.message || '账号或密码错误', 'error');
       }
@@ -1781,6 +1889,14 @@ createApp({
       closeGroupModal,
       groupQrUrl,
       isWeChat,
+      groupQrInfo,
+      uploadingGroupQr,
+      groupQrInputRef,
+      groupQrPreviewUrl,
+      groupQrUrlLive,
+      pickGroupQr,
+      uploadGroupQr,
+      resetGroupQr,
       toast,
       isAdmin,
       showAdminModal,
