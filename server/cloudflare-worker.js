@@ -888,7 +888,11 @@ async function serveStaticAsset(request, ctx, path) {
   }
 
   try {
-    const originRes = await fetch(STATIC_ORIGIN + path, {
+    // 回源地址带一个每分钟滚动的版本号：GitHub Pages 前面的 CDN 有自己的缓存 TTL，
+    // 不带这个参数时，刚 push 的改动可能被它压住好几分钟才轮到边缘看到
+    const isMedia = path.startsWith('/vendor/') || /\.(png|jpe?g|gif|webp|svg|ico|woff2?)$/i.test(path);
+    const originUrl = STATIC_ORIGIN + path + (isMedia ? '' : `?v=${Math.floor(Date.now() / 60000)}`);
+    const originRes = await fetch(originUrl, {
       headers: { 'User-Agent': 'lecture-voting-edge/1.0', 'Accept': '*/*' }
     });
     if (originRes.ok) {
