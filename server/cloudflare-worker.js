@@ -533,17 +533,15 @@ function staticContentType(path, fromOrigin) {
   return map[ext] || fromOrigin || 'application/octet-stream';
 }
 
-function buildStaticResponse(body, contentType, maxAge, cacheState) {
-  return new Response(body, {
-    status: 200,
-    headers: {
-      'Content-Type': contentType,
-      'Cache-Control': `public, max-age=${maxAge}`,
-      'X-Edge-Cache': cacheState,
-      'Access-Control-Allow-Origin': '*',
-      'X-Content-Type-Options': 'nosniff'
-    }
-  });
+function buildStaticResponse(body, contentType, maxAge, cacheState, ageSeconds) {
+  const headers = new Headers();
+  headers.set('Content-Type', contentType);
+  headers.set('Cache-Control', `public, max-age=${maxAge}`);
+  headers.set('X-Edge-Cache', cacheState);
+  if (ageSeconds !== undefined && ageSeconds !== null) headers.set('X-Edge-Age', String(Math.round(ageSeconds)));
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  return new Response(body, { status: 200, headers });
 }
 
 // 边缘与源站都拿不到页面时的兜底：自动重试 + 备用线路入口（弱网下不给同学白屏）
@@ -588,9 +586,10 @@ async function serveStaticAsset(request, ctx, path) {
   try { cached = await cache.match(cacheKey); } catch (e) {}
   if (cached) {
     const cachedAt = Number(cached.headers.get('x-cached-at') || 0);
-    if (cachedAt && (Date.now() - cachedAt) / 1000 < fresh) {
+    const age = cachedAt ? (Date.now() - cachedAt) / 1000 : Infinity;
+    if (age < fresh) {
       const type = cached.headers.get('content-type') || 'application/octet-stream';
-      return buildStaticResponse(isHead ? null : await cached.arrayBuffer(), type, fresh, 'HIT');
+      return buildStaticResponse(isHead ? null : await cached.arrayBuffer(), type, fresh, 'HIT', age);
     }
   }
 
@@ -610,7 +609,7 @@ async function serveStaticAsset(request, ctx, path) {
         }
       });
       ctx.waitUntil(cache.put(cacheKey, forCache).catch(() => {}));
-      return buildStaticResponse(isHead ? null : body, contentType, fresh, 'MISS');
+      return buildStaticResponse(isHead ? null : body, contentType, fresh, cached ? 'REVALIDATED' : 'MISS', 0);
     }
   } catch (e) {
     // 回源失败 → 落到下面的缓存兜底
@@ -618,7 +617,9 @@ async function serveStaticAsset(request, ctx, path) {
 
   if (cached) {
     const type = cached.headers.get('content-type') || 'application/octet-stream';
-    return buildStaticResponse(isHead ? null : await cached.arrayBuffer(), type, fresh, 'STALE');
+    const cachedAt = Number(cached.headers.get('x-cached-at') || 0);
+    const age = cachedAt ? (Date.now() - cachedAt) / 1000 : Infinity;
+    return buildStaticResponse(isHead ? null : await cached.arrayBuffer(), type, fresh, 'STALE', age);
   }
   return staticUnavailablePage(new URL(request.url).hostname);
 }
