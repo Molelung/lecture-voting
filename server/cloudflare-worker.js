@@ -328,6 +328,240 @@ async function executeWithRetry(fn, retries = 2, delayMs = 40) {
   throw lastErr;
 }
 
+// ── 全局限流（D1 原子计数）───────────────────────────────────────────────────
+// 上面两个内存 Map 只在单个边缘 isolate 内有效，请求分散到不同节点就能绕过；
+// 登录这类接口必须用跨节点共享的计数器，否则等于没有防护。
+let rateTableReady = false;
+let rateSchemaAttempts = 0;
+
+async function ensureSchema(DB) {
+  if (!DB || rateTableReady) return;
+  // 连续失败就放弃重试，避免每个请求都要白试一次建表
+  if (rateSchemaAttempts >= 3) return;
+  rateSchemaAttempts++;
+  try {
+    await DB.prepare(`CREATE TABLE IF NOT EXISTS rate_limits (
+      key TEXT PRIMARY KEY,
+      window_start INTEGER NOT NULL,
+      count INTEGER NOT NULL
+    )`).run();
+    rateTableReady = true;
+  } catch (e) {
+    console.warn('ensureSchema error:', e.message);
+  }
+}
+
+// 固定窗口计数：一次 batch（事务）内自增并读回，跨边缘节点一致。
+// 多个 key 合并到同一个 batch，避免投票路径为了限流多跑好几个来回。
+async function checkGlobalLimits(DB, specs) {
+  if (!DB || !specs || specs.length === 0) return { allowed: true, details: [] };
+  try {
+    await ensureSchema(DB);
+    const now = Date.now();
+    const stmts = [];
+    for (const s of specs) {
+      const slot = Math.floor(now / s.windowMs) * s.windowMs;
+      stmts.push(DB.prepare(`INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1)
+        ON CONFLICT(key) DO UPDATE SET
+          count = CASE WHEN excluded.window_start = rate_limits.window_start THEN rate_limits.count + 1 ELSE 1 END,
+          window_start = excluded.window_start`).bind(s.key, slot));
+    }
+    for (const s of specs) {
+      stmts.push(DB.prepare('SELECT count FROM rate_limits WHERE key = ?').bind(s.key));
+    }
+    const res = await DB.batch(stmts);
+    const details = specs.map((s, i) => {
+      const row = res && res[specs.length + i] && res[specs.length + i].results && res[specs.length + i].results[0];
+      const count = row ? row.count : 1;
+      return { key: s.key, count, limit: s.limit, allowed: count <= s.limit };
+    });
+    return { allowed: details.every(d => d.allowed), details };
+  } catch (e) {
+    // 限流器自身故障绝不能挡住正常投票
+    console.warn('checkGlobalLimits error:', e.message);
+    return { allowed: true, details: [] };
+  }
+}
+
+async function checkGlobalLimit(DB, key, limit, windowMs) {
+  const r = await checkGlobalLimits(DB, [{ key, limit, windowMs }]);
+  return { allowed: r.allowed, count: r.details[0] ? r.details[0].count : 0, limit };
+}
+
+// 读取并限制请求体：content-length 可以被 chunked 传输绕过，必须按实际长度判断
+async function readJsonBody(request, maxBytes = 65536) {
+  try {
+    const raw = await request.text();
+    if (raw && raw.length > maxBytes) return { tooLarge: true };
+    if (!raw) return { data: {} };
+    return { data: JSON.parse(raw) };
+  } catch (e) {
+    return { data: {} };
+  }
+}
+
+// ── CORS：只允许自己的站点跨域调用 ──────────────────────────────────────────
+// 不限制的话，任意网站都能让访客的浏览器替它打我们的接口（借别人的 IP 当跳板）。
+const ALLOWED_ORIGINS = [
+  'https://vote.molan.cc.cd',
+  'https://vote.listener.ccwu.cc',
+  'https://molelung.github.io'
+];
+
+function corsFor(request) {
+  const origin = request.headers.get('Origin') || '';
+  const allowed = !origin ||
+    ALLOWED_ORIGINS.includes(origin) ||
+    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  const headers = { ...CORS_HEADERS, Vary: 'Origin' };
+  if (allowed && origin) headers['Access-Control-Allow-Origin'] = origin;
+  if (!allowed) delete headers['Access-Control-Allow-Origin'];
+  return headers;
+}
+
+// ── KV 选票 / 留言：单键模型 ─────────────────────────────────────────────────
+// 原实现把全部选票放在一个 JSON 数组里，每次投票都要"读出来 → 改 → 写回去"，
+// 并发投票会互相覆盖，静默丢条目（一节课几十人同时投就会触发）。
+// 改成每人/每条一个键：写入互不冲突，读取时按前缀列举汇总，从根上消除竞态。
+const KV_BALLOT_PREFIX = 'voter:';
+const KV_COMMENT_PREFIX = 'cmt:';
+
+async function putKvBallot(KV, ballot) {
+  if (!KV || !ballot || !ballot.voterToken) return;
+  await safePutKV(KV, KV_BALLOT_PREFIX + ballot.voterToken, JSON.stringify(ballot));
+}
+
+async function putKvComment(KV, comment) {
+  if (!KV || !comment || !comment.id) return;
+  await safePutKV(KV, KV_COMMENT_PREFIX + comment.id, JSON.stringify(comment));
+}
+
+// KV.list 单次最多返回 1000 条：必须翻页，否则选民破千后会漏掉一部分
+async function listKvKeys(KV, prefix) {
+  const out = [];
+  if (!KV) return out;
+  let cursor = null;
+  for (let i = 0; i < 50; i++) {
+    const page = await KV.list({ prefix, cursor, limit: 1000 });
+    if (!page || !page.keys) break;
+    for (const k of page.keys) out.push(k.name);
+    if (page.list_complete) break;
+    cursor = page.cursor;
+  }
+  return out;
+}
+
+async function loadKvByPrefix(KV, prefix, limit = 3000) {
+  if (!KV) return [];
+  try {
+    const keys = await listKvKeys(KV, prefix);
+    const out = [];
+    for (let i = 0; i < keys.length && out.length < limit; i += 25) {
+      const vals = await Promise.all(keys.slice(i, i + 25).map(k => getJsonKV(KV, k, null)));
+      for (const v of vals) if (v) out.push(v);
+    }
+    return out;
+  } catch (e) {
+    console.warn('loadKvByPrefix error', prefix, e.message);
+    return [];
+  }
+}
+
+// 汇总 KV 选票：单键为主，同时兼容早期写在 ballots 数组里的历史数据（按投票人去重）
+async function loadKvBallots(KV) {
+  const fresh = await loadKvByPrefix(KV, KV_BALLOT_PREFIX);
+  const seen = new Set(fresh.map(b => b.voterToken || b.voterId).filter(Boolean));
+  const legacy = await getJsonKV(KV, 'ballots', []);
+  const merged = [...fresh];
+  for (const b of legacy) {
+    const t = b && (b.voterToken || b.voterId);
+    if (t && !seen.has(t)) { seen.add(t); merged.push(b); }
+  }
+  return merged;
+}
+
+async function loadKvComments(KV) {
+  const fresh = await loadKvByPrefix(KV, KV_COMMENT_PREFIX);
+  const seen = new Set(fresh.map(c => c.id).filter(Boolean));
+  const legacy = await getJsonKV(KV, 'comments', []);
+  const merged = [...fresh];
+  for (const c of legacy) {
+    if (c && c.id && !seen.has(c.id)) { seen.add(c.id); merged.push(c); }
+  }
+  merged.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return merged;
+}
+
+// 删除某个前缀下的全部键（清空选民状态用）
+async function deleteKvByPrefix(KV, prefix) {
+  if (!KV) return 0;
+  const keys = await listKvKeys(KV, prefix);
+  for (let i = 0; i < keys.length; i += 100) {
+    await Promise.all(keys.slice(i, i + 100).map(k => KV.delete(k).catch(() => {})));
+  }
+  return keys.length;
+}
+
+// ── 数据快照：破坏性操作（清空 / 恢复 / 修复）前先留一份，误操作可回滚 ────────
+const SNAPSHOT_PREFIX = 'snapshot:';
+const SNAPSHOT_KEEP = 5;
+
+async function takeSnapshot(KV, DB, label, maxKeep = SNAPSHOT_KEEP) {
+  if (!KV) return null;
+  try {
+    const snapshot = {
+      label,
+      createdAt: new Date().toISOString(),
+      settings: await getJsonKV(KV, 'settings', null),
+      topics: await getJsonKV(KV, 'topics', null),
+      ballots: [],
+      comments: []
+    };
+    if (DB) {
+      try {
+        const [bRes, cRes] = await Promise.all([
+          DB.prepare('SELECT * FROM ballots ORDER BY voted_at DESC').all(),
+          DB.prepare('SELECT * FROM comments ORDER BY created_at DESC').all()
+        ]);
+        snapshot.ballots = (bRes.results || []).map(b => ({
+          id: b.id,
+          voterToken: b.voter_token,
+          topicIds: JSON.parse(b.topic_ids || '[]'),
+          comment: b.comment || '',
+          clientIp: b.client_ip || '',
+          votedAt: b.voted_at
+        }));
+        snapshot.comments = (cRes.results || []).map(c => ({
+          id: c.id,
+          topicId: c.topic_id || 'general',
+          topicTitle: c.topic_title || '',
+          voterId: c.voter_token,
+          authorName: c.author_name || '同学',
+          text: c.text,
+          createdAt: c.created_at
+        }));
+      } catch (e) {
+        // D1 读不到就退化为只存 KV 侧数据
+      }
+    }
+    if (snapshot.ballots.length === 0) snapshot.ballots = await loadKvBallots(KV);
+    if (snapshot.comments.length === 0) snapshot.comments = await loadKvComments(KV);
+
+    const key = `${SNAPSHOT_PREFIX}${Date.now()}-${label}`;
+    await safePutKV(KV, key, JSON.stringify(snapshot));
+
+    // 只保留最近 maxKeep 份，避免越积越多
+    const keys = (await listKvKeys(KV, SNAPSHOT_PREFIX)).sort();
+    for (const k of keys.slice(0, Math.max(0, keys.length - maxKeep))) {
+      await KV.delete(k).catch(() => {});
+    }
+    return { key, ballots: snapshot.ballots.length, comments: snapshot.comments.length };
+  } catch (e) {
+    console.warn('takeSnapshot error:', e.message);
+    return null;
+  }
+}
+
 function base64UrlEncode(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = '';
@@ -344,20 +578,52 @@ function base64UrlDecode(str) {
   return new TextDecoder().decode(bytes);
 }
 
-function parseUserFromHeader(request) {
-  const auth = request.headers.get('Authorization');
-  if (!auth || !auth.startsWith('Bearer ')) return null;
-  const token = auth.replace('Bearer ', '').trim();
-  try {
-    const parts = token.split('.');
-    if (parts.length >= 2) return JSON.parse(base64UrlDecode(parts[1]));
-    return JSON.parse(base64UrlDecode(token));
-  } catch (e) {
-    return null;
-  }
+// ── 管理员令牌：HS256 真签名 ─────────────────────────────────────────────────
+// 旧实现把签名写成固定常量、验签时只 base64 解码 payload，等于任何人构造一个
+// {"role":"admin"} 就能调用全部 /api/admin/* 接口（导出选民、清空数据、改密码）。
+// 现在改为标准 HMAC-SHA256 签名 + 有效期校验，密钥首次使用时随机生成并持久化到 KV。
+let cachedJwtSecret = null;
+
+function randomHex(bytes = 32) {
+  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
-function createToken(user) {
+async function getJwtSecret(KV) {
+  if (cachedJwtSecret) return cachedJwtSecret;
+  let rec = await getJsonKV(KV, 'jwt_secret', null);
+  if (!rec || !rec.k) {
+    rec = { k: randomHex(32), createdAt: new Date().toISOString() };
+    if (KV) await safePutKV(KV, 'jwt_secret', JSON.stringify(rec));
+  }
+  cachedJwtSecret = rec.k;
+  return cachedJwtSecret;
+}
+
+async function hmacKey(secret) {
+  return crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']
+  );
+}
+
+function base64UrlFromBytes(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function bytesFromBase64Url(str) {
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) base64 += '=';
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function signToken(user, KV) {
+  const key = await hmacKey(await getJwtSecret(KV));
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = base64UrlEncode(JSON.stringify({
     id: user.id,
@@ -366,8 +632,36 @@ function createToken(user) {
     role: user.role,
     exp: Date.now() + 86400000 * 30
   }));
-  const signature = base64UrlEncode('lecture-token-sig');
-  return `${header}.${payload}.${signature}`;
+  const data = `${header}.${payload}`;
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  return `${data}.${base64UrlFromBytes(new Uint8Array(sig))}`;
+}
+
+// 校验签名与有效期：任何一步不通过都当作未登录（不再"解码即信任"）
+async function verifyToken(token, KV) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const key = await hmacKey(await getJwtSecret(KV));
+    const data = `${parts[0]}.${parts[1]}`;
+    const valid = await crypto.subtle.verify(
+      'HMAC', key, bytesFromBase64Url(parts[2]), new TextEncoder().encode(data)
+    );
+    if (!valid) return null;
+    const payload = JSON.parse(base64UrlDecode(parts[1]));
+    if (!payload || typeof payload.exp !== 'number' || Date.now() > payload.exp) return null;
+    if (payload.role !== 'admin') return null;
+    return payload;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function authenticate(request, KV) {
+  const auth = request.headers.get('Authorization');
+  if (!auth || !auth.startsWith('Bearer ')) return null;
+  return verifyToken(auth.slice(7).trim(), KV);
 }
 
 // PBKDF2 密码哈希生成器 (Web Crypto 标准，100,000 次迭代，16 字节真随机 Salt)
@@ -624,8 +918,7 @@ async function serveStaticAsset(request, ctx, path) {
   return staticUnavailablePage(new URL(request.url).hostname);
 }
 
-export default {
-  async fetch(request, env, ctx) {
+async function handleRequest(request, env, ctx) {
     const startTime = Date.now();
     const url = new URL(request.url);
     const path = url.pathname;
@@ -659,7 +952,7 @@ export default {
     
     // 多通道捕获选民标识：请求头 > URL Query 参数
     let voterToken = request.headers.get('X-Voter-Token') || request.headers.get('x-voter-token') || url.searchParams.get('voterToken') || '';
-    const adminUser = parseUserFromHeader(request);
+    const adminUser = await authenticate(request, KV);
     const isAdmin = !!(adminUser && adminUser.role === 'admin');
 
     try {
@@ -743,7 +1036,7 @@ export default {
 
         // 若总人数为 0 但 KV 中存在数据，以 KV 选票池兜底
         if (totalVoters === 0 && KV) {
-          const kvBallots = await getJsonKV(KV, 'ballots', []);
+          const kvBallots = await loadKvBallots(KV);
           if (kvBallots.length > 0) {
             totalVoters = kvBallots.length;
             totalVotesCast = kvBallots.reduce((acc, b) => acc + ((b.topicIds && b.topicIds.length) || 0), 0);
@@ -824,7 +1117,7 @@ export default {
 
         // 若 D1 计数为 0 但 KV 存在选票列表，实施 KV 聚合计算
         if (totalVotesCast === 0 && KV) {
-          const kvBallots = await getJsonKV(KV, 'ballots', []);
+          const kvBallots = await loadKvBallots(KV);
           if (kvBallots.length > 0) {
             for (const b of kvBallots) {
               if (b && Array.isArray(b.topicIds)) {
@@ -909,7 +1202,7 @@ export default {
         }
 
         if (totalVoters === 0 && KV) {
-          const kvBallots = await getJsonKV(KV, 'ballots', []);
+          const kvBallots = await loadKvBallots(KV);
           if (kvBallots.length > 0) {
             totalVoters = kvBallots.length;
             for (const b of kvBallots) {
@@ -960,7 +1253,8 @@ export default {
 
       // 4. POST /api/vote (零冲突 ACID 事务投票 + 双写永久镜像备份)
       if (path === '/api/vote' && method === 'POST') {
-        const body = await request.json().catch(() => ({}));
+        const { tooLarge, data: body } = await readJsonBody(request);
+        if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
         // 多通道获取选民 token：Header > Body > URL Query > 兜底
         const clientToken = voterToken || body.voterToken || url.searchParams.get('voterToken') || ('anon-' + Math.random().toString(36).slice(2, 12));
 
@@ -969,6 +1263,14 @@ export default {
         }
         if (!checkIpRateLimit(clientIp, 250, 60000)) {
           return jsonResponse({ error: '当前网络访问量过大，请稍候再试' }, 429);
+        }
+        // 跨节点全局限流：内存 Map 只能挡住同一 isolate，脚本分散请求即可绕过
+        const voteLimits = await checkGlobalLimits(DB, [
+          { key: 'vote:ip:' + clientIp, limit: 200, windowMs: 60000 },
+          { key: 'vote:tok:' + clientToken, limit: 30, windowMs: 600000 }
+        ]);
+        if (!voteLimits.allowed) {
+          return jsonResponse({ error: '提交过于频繁，请稍候再试' }, 429);
         }
 
         const { topicIds: rawTopicIds, comment } = body;
@@ -1091,28 +1393,20 @@ export default {
           topicTitles: topicIds.map(id => topicMap[id] || id),
           comment: cleanComment,
           clientIp: clientIp.slice(0, 16),
+          // 记录承接这票的边缘节点与接入域名：便于事后核对"某个节点是不是漏了票"
+          edgeColo: (request.cf && request.cf.colo) || 'unknown',
+          viaHost: url.hostname,
           votedAt
         };
 
         const syncKvTask = async () => {
           if (!KV) return;
           try {
-            // 写入单人选票
-            await safePutKV(KV, 'voter:' + clientToken, JSON.stringify(ballot));
-            // 同步更新全局选票明细池
-            const currentBallots = await getJsonKV(KV, 'ballots', []);
-            const idx = currentBallots.findIndex(b => b && (b.voterId === clientToken || b.voterToken === clientToken));
-            if (idx >= 0) {
-              currentBallots[idx] = ballot;
-            } else {
-              currentBallots.push(ballot);
-            }
-            await safePutKV(KV, 'ballots', JSON.stringify(currentBallots));
-
-            // 如果有留言且 D1 写入未成功，向 KV comments 写入备份
+            // 单键写入：并发投票互不冲突（原来改全局数组会互相覆盖丢票）
+            await putKvBallot(KV, ballot);
+            // 留言同样按条目单键落盘
             if (cleanComment && !d1WriteSuccess) {
-              const currentComments = await getJsonKV(KV, 'comments', []);
-              currentComments.unshift({
+              await putKvComment(KV, {
                 id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
                 topicId: topicIds[0] || 'general',
                 topicTitle: topicMap[topicIds[0]] || '',
@@ -1121,7 +1415,6 @@ export default {
                 text: cleanComment,
                 createdAt: votedAt
               });
-              await safePutKV(KV, 'comments', JSON.stringify(currentComments.slice(0, 300)));
             }
           } catch (kvErr) {
             console.error('syncKvTask error:', kvErr.message);
@@ -1170,12 +1463,13 @@ export default {
             }
           }
 
-          const comments = await getJsonKV(KV, 'comments', []);
+          const comments = await loadKvComments(KV);
           return jsonResponse({ success: true, comments });
         }
 
         if (method === 'POST') {
-          const body = await request.json().catch(() => ({}));
+          const { tooLarge, data: body } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
           const authorToken = voterToken || body.voterToken || clientIp;
 
           if (!checkTokenRateLimit(authorToken, 8, 60000)) {
@@ -1226,9 +1520,8 @@ export default {
           if (KV) {
             const syncCommentKV = async () => {
               try {
-                const current = await getJsonKV(KV, 'comments', []);
-                current.unshift(newComment);
-                await safePutKV(KV, 'comments', JSON.stringify(current.slice(0, 300)));
+                // 单键写入，避免并发留言互相覆盖
+                await putKvComment(KV, newComment);
               } catch (e) {}
             };
             if (ctx && typeof ctx.waitUntil === 'function') {
@@ -1256,9 +1549,13 @@ export default {
         }
         if (KV) {
           try {
+            // 单键直接删；历史数组里的同 id 记录一并清掉
+            await KV.delete(KV_COMMENT_PREFIX + commentId).catch(() => {});
             const current = await getJsonKV(KV, 'comments', []);
             const next = current.filter(c => c.id !== commentId);
-            await safePutKV(KV, 'comments', JSON.stringify(next));
+            if (next.length !== current.length) {
+              await safePutKV(KV, 'comments', JSON.stringify(next));
+            }
           } catch (e) {}
         }
         return jsonResponse({ success: true, message: '留言已删除' });
@@ -1281,7 +1578,7 @@ export default {
               return jsonResponse({ success: true, comments: list });
             } catch (e) {}
           }
-          const allComments = await getJsonKV(KV, 'comments', []);
+          const allComments = await loadKvComments(KV);
           const list = allComments.filter(c => c.topicId === topicId).map(c => ({
             id: c.id,
             text: c.text,
@@ -1292,10 +1589,15 @@ export default {
         }
 
         if (method === 'POST') {
-          const body = await request.json().catch(() => ({}));
+          const { tooLarge, data: body } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
           const authorToken = voterToken || body.voterToken || clientIp;
 
           if (!checkTokenRateLimit(authorToken, 8, 60000)) {
+            return jsonResponse({ error: '发言过于频繁，请稍息后再试' }, 429);
+          }
+          const commentLimit = await checkGlobalLimit(DB, 'comment:ip:' + clientIp, 40, 60000);
+          if (!commentLimit.allowed) {
             return jsonResponse({ error: '发言过于频繁，请稍息后再试' }, 429);
           }
           const cleanText = sanitizeText(body.text, 200);
@@ -1319,9 +1621,7 @@ export default {
           if (KV) {
             const syncTopicCmt = async () => {
               try {
-                const current = await getJsonKV(KV, 'comments', []);
-                current.unshift({ id: cmtId, topicId, topicTitle: '', voterId: authorToken, authorName: cleanAuthor, text: cleanText, createdAt });
-                await safePutKV(KV, 'comments', JSON.stringify(current.slice(0, 300)));
+                await putKvComment(KV, { id: cmtId, topicId, topicTitle: '', voterId: authorToken, authorName: cleanAuthor, text: cleanText, createdAt });
               } catch (e) {}
             };
             if (ctx && typeof ctx.waitUntil === 'function') {
@@ -1341,7 +1641,20 @@ export default {
 
       // 7. 管理员安全认证（Web Crypto PBKDF2 强化加密校验，零明文存储）
       if (path === '/api/auth/login' && method === 'POST') {
-        const body = await request.json().catch(() => ({}));
+        // 唯一的口令入口：本节点内存限流 + D1 全局限流，杜绝无限次猜密码与 CPU 消耗型冲击
+        if (!checkIpRateLimit('login:' + clientIp, 20, 300000)) {
+          return jsonResponse({ error: '尝试过于频繁，请 5 分钟后再试' }, 429);
+        }
+        const loginLimits = await checkGlobalLimits(DB, [
+          { key: 'login:ip:' + clientIp, limit: 20, windowMs: 300000 },
+          { key: 'login:all', limit: 200, windowMs: 300000 }
+        ]);
+        if (!loginLimits.allowed) {
+          return jsonResponse({ error: '尝试过于频繁，请稍后再试' }, 429);
+        }
+
+        const { tooLarge, data: body } = await readJsonBody(request);
+        if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
         const { username, password } = body;
         if (!username || !password) {
           return jsonResponse({ error: '请输入管理员账号与密码' }, 400);
@@ -1352,7 +1665,7 @@ export default {
           const isValid = await verifyPassword(password, creds.salt, creds.hash);
           if (isValid) {
             const adminObj = { id: 'admin-root', username: creds.username || 'admin', displayName: '总管理员', role: 'admin' };
-            const token = createToken(adminObj);
+            const token = await signToken(adminObj, KV);
             return jsonResponse({ success: true, message: '管理员登录成功', token, user: adminObj });
           }
         }
@@ -1363,9 +1676,16 @@ export default {
       if (path.startsWith('/api/admin')) {
         if (!isAdmin) return jsonResponse({ error: '需要管理员权限' }, 403);
 
+        // 管理接口限流：主要拦脚本失控循环，正常人工操作远达不到这个量
+        const adminLimit = await checkGlobalLimit(DB, 'admin:ip:' + clientIp, 240, 60000);
+        if (!adminLimit.allowed) {
+          return jsonResponse({ error: '操作过于频繁，请稍候再试' }, 429);
+        }
+
         // POST /api/admin/change-password & PUT /api/admin/password (在线修改管理员密码)
         if ((path === '/api/admin/change-password' || path === '/api/admin/password') && (method === 'POST' || method === 'PUT')) {
-          const body = await request.json().catch(() => ({}));
+          const { tooLarge, data: body } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
           const { oldPassword, newPassword } = body;
           if (!oldPassword || !newPassword) {
             return jsonResponse({ error: '请提供原密码与新密码' }, 400);
@@ -1404,7 +1724,7 @@ export default {
           }
 
           const adminObj = { id: 'admin-root', username: updatedRecord.username, displayName: '总管理员', role: 'admin' };
-          const token = createToken(adminObj);
+          const token = await signToken(adminObj, KV);
 
           return jsonResponse({
             success: true,
@@ -1452,13 +1772,14 @@ export default {
                   createdAt: c.created_at
                 }));
                 await safePutKV(KV, 'comments', JSON.stringify(formattedComments));
+                for (const c of formattedComments) await putKvComment(KV, c);
               }
             } catch (e) {
-              return jsonResponse({ error: 'D1 读取对齐失败: ' + e.message }, 500);
+              return jsonResponse({ error: 'D1 读取对齐失败，数据未变动' }, 500);
             }
           }
           if (KV) {
-            const kvB = await getJsonKV(KV, 'ballots', []);
+            const kvB = await loadKvBallots(KV);
             kvCount = kvB.length;
           }
           return jsonResponse({
@@ -1488,7 +1809,7 @@ export default {
               return jsonResponse({ success: true, ballots: list });
             } catch (e) {}
           }
-          const ballots = await getJsonKV(KV, 'ballots', []);
+          const ballots = await loadKvBallots(KV);
           return jsonResponse({ success: true, ballots });
         }
 
@@ -1519,28 +1840,53 @@ export default {
 
         // POST /api/admin/clear-votes (彻底清空重置选票与选民状态)
         if ((path === '/api/admin/clear-votes' || path === '/api/admin/reset-votes') && method === 'POST') {
+          const { tooLarge, data: body } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
+          // 默认同时清空留言（保持原有行为）；只想清选票可传 keepComments:true
+          const keepComments = body.keepComments === true;
+          const confirm = body.confirm;
+
+          // 这种不可逆操作必须先自动快照，误点了还能捞回来
+          const snapshot = await takeSnapshot(KV, DB, 'before-clear-votes');
+
+          let d1Cleared = false;
           if (DB) {
             try {
-              await DB.batch([
-                DB.prepare('DELETE FROM ballots'),
-                DB.prepare('DELETE FROM vote_items'),
-                DB.prepare('DELETE FROM comments')
-              ]);
-            } catch (e) {}
+              const stmts = [DB.prepare('DELETE FROM ballots'), DB.prepare('DELETE FROM vote_items')];
+              if (!keepComments) stmts.push(DB.prepare('DELETE FROM comments'));
+              await DB.batch(stmts);
+              d1Cleared = true;
+            } catch (e) {
+              console.warn('clear-votes D1 error:', e.message);
+            }
           }
 
+          let kvDeleted = 0;
           if (KV) {
+            // 历史数组置空（兼容旧数据），并逐一删除单键（分页，选民破千也不会漏）
             await safePutKV(KV, 'ballots', JSON.stringify([]));
-            await safePutKV(KV, 'comments', JSON.stringify([]));
-            try {
-              const voterKeys = await KV.list({ prefix: 'voter:' });
-              if (voterKeys && voterKeys.keys) {
-                for (const k of voterKeys.keys) await KV.delete(k.name);
-              }
-            } catch (e) {}
+            kvDeleted += await deleteKvByPrefix(KV, KV_BALLOT_PREFIX);
+            if (!keepComments) {
+              await safePutKV(KV, 'comments', JSON.stringify([]));
+              kvDeleted += await deleteKvByPrefix(KV, KV_COMMENT_PREFIX);
+            }
           }
 
-          return jsonResponse({ success: true, message: '所有选票、选民指纹与讨论留言已全量重置清空！' });
+          if (!d1Cleared) {
+            return jsonResponse({
+              error: '主库清空失败，数据未变动（KV 已回滚为空数组，但单键未动）；请稍后重试或先在审计里核对',
+              snapshot
+            }, 500);
+          }
+
+          return jsonResponse({
+            success: true,
+            message: keepComments
+              ? '已清空全部选票与选民状态（留言保留）'
+              : '所有选票、选民指纹与讨论留言已全量重置清空！',
+            cleared: { d1: true, kvKeys: kvDeleted, keepComments, confirm: confirm || null },
+            snapshot
+          });
         }
 
         // GET /api/admin/settings & PUT /api/admin/settings
@@ -1550,7 +1896,8 @@ export default {
             return jsonResponse({ success: true, settings: currentSettings });
           }
           if (method === 'PUT') {
-            const updates = await request.json().catch(() => ({}));
+            const { tooLarge, data: updates } = await readJsonBody(request);
+            if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
             let current = await getJsonKV(KV, 'settings', {});
             const newSettings = { ...current, ...updates, updatedAt: new Date().toISOString() };
             await safePutKV(KV, 'settings', JSON.stringify(newSettings));
@@ -1560,7 +1907,8 @@ export default {
 
         // PUT /api/admin/topics/reorder (调整社课前台展示排序)
         if (path === '/api/admin/topics/reorder' && method === 'PUT') {
-          const body = await request.json().catch(() => ({}));
+          const { tooLarge, data: body } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
           const { orderedIds } = body;
           if (Array.isArray(orderedIds)) {
             let currentTopics = await getJsonKV(KV, 'topics', DEFAULT_TOPICS);
@@ -1581,7 +1929,8 @@ export default {
 
         // POST /api/admin/topics
         if (path === '/api/admin/topics' && method === 'POST') {
-          const body = await request.json().catch(() => ({}));
+          const { tooLarge, data: body } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
           const { title, speaker, category, tag, duration, hook, summary, outline } = body;
           if (!title || !title.trim()) return jsonResponse({ error: '社课主题名称不能为空' }, 400);
 
@@ -1610,7 +1959,8 @@ export default {
         // PUT /api/admin/topics/:id
         if (path.startsWith('/api/admin/topics/') && method === 'PUT') {
           const topicId = path.split('/')[4];
-          const updates = await request.json().catch(() => ({}));
+          const { tooLarge, data: updates } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
           let topics = await getJsonKV(KV, 'topics', DEFAULT_TOPICS);
           const idx = topics.findIndex(t => t.id === topicId);
           if (idx === -1) return jsonResponse({ error: '未找到对应社课议题' }, 404);
@@ -1632,6 +1982,288 @@ export default {
           topics = topics.filter(t => t.id !== topicId);
           await safePutKV(KV, 'topics', JSON.stringify(topics));
           return jsonResponse({ success: true, message: '社课议题已删除！' });
+        }
+
+        // GET /api/admin/audit
+        // 数据对账与异常检测：把"可能悄悄漏掉的东西"全部摊开，便于向同学交代
+        //   missingInD1  —— KV 有、D1 没有：没能落主库的票（真正的"漏票"）
+        //   missingInKv  —— D1 有、KV 没有：备份镜像缺失（主库仍在，不影响数据）
+        //   duplicateIdentities —— 同一设备投出多张票（换域名/换浏览器导致身份重复）
+        //   suspiciousIps —— 同一 IP 短时间大量不同选民（疑似脚本刷票）
+        //   edgeNodes    —— 每个边缘节点承接的票数（用于核对某个节点是否异常）
+        if (path === '/api/admin/audit' && method === 'GET') {
+          let d1Ballots = [];
+          let d1Comments = [];
+          if (DB) {
+            try {
+              const [b, c] = await Promise.all([
+                DB.prepare('SELECT * FROM ballots ORDER BY voted_at DESC').all(),
+                DB.prepare('SELECT id, topic_id, text, created_at FROM comments ORDER BY created_at DESC').all()
+              ]);
+              d1Ballots = (b.results || []).map(x => ({
+                id: x.id,
+                voterToken: x.voter_token,
+                topicIds: JSON.parse(x.topic_ids || '[]'),
+                comment: x.comment || '',
+                clientIp: x.client_ip || '',
+                votedAt: x.voted_at
+              }));
+              d1Comments = c.results || [];
+            } catch (e) {
+              console.warn('audit D1 read error:', e.message);
+            }
+          }
+          const kvBallots = await loadKvBallots(KV);
+          const kvComments = await loadKvComments(KV);
+
+          const d1Tokens = new Set(d1Ballots.map(b => b.voterToken));
+          const kvByToken = new Map(kvBallots.map(b => [b.voterToken, b]).filter(x => x[0]));
+
+          const missingInD1 = [];
+          for (const b of kvBallots) {
+            if (b && b.voterToken && !d1Tokens.has(b.voterToken)) {
+              missingInD1.push({
+                voterToken: b.voterToken,
+                topicIds: b.topicIds || [],
+                comment: b.comment || '',
+                clientIp: b.clientIp || '',
+                votedAt: b.votedAt || '',
+                edgeColo: b.edgeColo || '(旧记录未采集)',
+                viaHost: b.viaHost || '',
+                suspectedTest: /测试|test/i.test(String(b.comment || '')) || /^2406:/.test(String(b.clientIp || ''))
+              });
+            }
+          }
+          const missingInKv = d1Ballots
+            .filter(b => !kvByToken.has(b.voterToken))
+            .map(b => ({ voterToken: b.voterToken, votedAt: b.votedAt }));
+
+          const byIp = new Map();
+          for (const b of d1Ballots) {
+            const ip = b.clientIp || 'unknown';
+            if (!byIp.has(ip)) byIp.set(ip, []);
+            byIp.get(ip).push({ voterToken: b.voterToken, votedAt: b.votedAt, topicIds: b.topicIds });
+          }
+          const duplicateIdentities = [];
+          const suspiciousIps = [];
+          const WINDOW = 10 * 60 * 1000;
+          for (const [ip, list] of byIp) {
+            if (list.length > 1) {
+              duplicateIdentities.push({
+                ip,
+                count: list.length,
+                ballots: list.slice().sort((a, b) => String(a.votedAt).localeCompare(String(b.votedAt)))
+              });
+            }
+            const times = list.map(x => new Date(x.votedAt).getTime()).filter(t => !isNaN(t)).sort((a, b) => a - b);
+            let maxInWindow = 0;
+            for (let i = 0; i < times.length; i++) {
+              let j = i;
+              while (j < times.length && times[j] - times[i] < WINDOW) j++;
+              maxInWindow = Math.max(maxInWindow, j - i);
+            }
+            if (maxInWindow >= 10) suspiciousIps.push({ ip, ballotsIn10Min: maxInWindow, total: list.length });
+          }
+
+          const kvTopics = await getJsonKV(KV, 'topics', null);
+          const topicList = (kvTopics && kvTopics.length) ? kvTopics : DEFAULT_TOPICS;
+          const validTopicIds = new Set(topicList.map(t => t.id));
+          const unknownTopics = [];
+          for (const b of d1Ballots) {
+            for (const tid of (b.topicIds || [])) {
+              if (!validTopicIds.has(tid)) unknownTopics.push({ voterToken: b.voterToken, topicId: tid });
+            }
+          }
+
+          const coloMap = new Map();
+          for (const b of kvBallots) {
+            if (!b) continue;
+            const node = b.edgeColo || '(旧记录未采集)';
+            const key = node + (b.viaHost ? ' · ' + b.viaHost : '');
+            coloMap.set(key, (coloMap.get(key) || 0) + 1);
+          }
+          const edgeNodes = [...coloMap.entries()]
+            .map(([node, count]) => ({ node, count }))
+            .sort((a, b) => b.count - a.count);
+
+          const commentIdsInKv = new Set(kvComments.map(c => c.id));
+          return jsonResponse({
+            success: true,
+            generatedAt: new Date().toISOString(),
+            counts: {
+              d1: { ballots: d1Ballots.length, comments: d1Comments.length },
+              kv: { ballots: kvBallots.length, comments: kvComments.length }
+            },
+            missingInD1,
+            missingInKv,
+            duplicateIdentities,
+            suspiciousIps,
+            unknownTopics,
+            edgeNodes,
+            commentsOnlyInKv: kvComments.filter(c => c && c.id && !d1Comments.some(d => d.id === c.id)).length,
+            // 数据是否完好：主库没有漏票、选票没有指向不存在的议题
+            healthy: missingInD1.length === 0 && unknownTopics.length === 0,
+            // 备份镜像是否完整：缺失只影响"主库挂掉时的兜底"，跑一次 /api/admin/sync 即可补齐
+            mirrorIncomplete: missingInKv.length > 0,
+            notes: [
+              'missingInD1 是真正需要处理的"漏票"，可用 POST /api/admin/audit/repair { action: "import-missing" } 补写进主库。',
+              'missingInKv 只是备份镜像缺条目（主库数据完好），跑一次 /api/admin/sync 即可补齐。',
+              'duplicateIdentities 里的多条选票来自同一台设备，通常是换域名前后各投了一次，可用 rebind-voter 合并。',
+              'edgeNodes 中带"(旧记录未采集)"的是本次采集上线前的投票，属正常。'
+            ]
+          }, 200, { 'Server-Timing': `app;dur=${Date.now() - startTime}` });
+        }
+
+        // POST /api/admin/audit/repair
+        // 按审计结果修复。支持 dryRun 先预览；任何实际修改前自动快照，可回滚
+        //   action: 'import-missing'  { tokens?: string[] }      把 KV 独有选票补写进 D1
+        //   action: 'drop-kv-orphans' { tokens: string[] }       删除 KV 上多余的记录（如测试数据）
+        //   action: 'rebind-voter'    { fromToken, toToken, overwrite? }  把选票改绑到新设备凭据
+        if (path === '/api/admin/audit/repair' && method === 'POST') {
+          const { tooLarge, data: body } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
+          const action = body.action;
+          const dryRun = body.dryRun === true;
+
+          if (action === 'import-missing') {
+            const only = Array.isArray(body.tokens) && body.tokens.length ? new Set(body.tokens) : null;
+            const kvBallots = await loadKvBallots(KV);
+            let d1Tokens = new Set();
+            if (DB) {
+              try {
+                const r = await DB.prepare('SELECT voter_token FROM ballots').all();
+                d1Tokens = new Set((r.results || []).map(x => x.voter_token));
+              } catch (e) {}
+            }
+            const targets = kvBallots.filter(b => b && b.voterToken && !d1Tokens.has(b.voterToken) && (!only || only.has(b.voterToken)));
+            if (dryRun) {
+              return jsonResponse({ success: true, dryRun: true, wouldImport: targets.length, items: targets });
+            }
+            const snapshot = await takeSnapshot(KV, DB, 'before-import-missing');
+            let imported = 0;
+            const failed = [];
+            for (const b of targets) {
+              if (!DB) break;
+              try {
+                const votedAt = b.votedAt || new Date().toISOString();
+                const stmts = [
+                  DB.prepare(`INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(voter_token) DO UPDATE SET
+                      topic_ids = excluded.topic_ids, comment = excluded.comment,
+                      client_ip = excluded.client_ip, voted_at = excluded.voted_at`)
+                    .bind(b.id || ('ballot-recover-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)),
+                      b.voterToken, JSON.stringify(b.topicIds || []), b.comment || '', b.clientIp || '', votedAt),
+                  DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(b.voterToken)
+                ];
+                for (const tid of (b.topicIds || [])) {
+                  stmts.push(DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)')
+                    .bind(b.voterToken, tid, votedAt));
+                }
+                await DB.batch(stmts);
+                imported++;
+              } catch (e) {
+                failed.push({ voterToken: b.voterToken, error: e.message });
+              }
+            }
+            return jsonResponse({ success: true, imported, failed, snapshot });
+          }
+
+          if (action === 'drop-kv-orphans') {
+            const tokens = Array.isArray(body.tokens) ? body.tokens : [];
+            if (tokens.length === 0) {
+              return jsonResponse({ error: '请显式指定要删除的 voterToken 列表（先看审计结果里的 suspectedTest）' }, 400);
+            }
+            if (dryRun) {
+              const kvBallots = await loadKvBallots(KV);
+              return jsonResponse({
+                success: true, dryRun: true,
+                wouldDrop: kvBallots.filter(b => b && tokens.includes(b.voterToken))
+              });
+            }
+            const snapshot = await takeSnapshot(KV, DB, 'before-drop-orphans');
+            for (const t of tokens) {
+              await KV.delete(KV_BALLOT_PREFIX + t).catch(() => {});
+            }
+            const legacy = await getJsonKV(KV, 'ballots', []);
+            const next = legacy.filter(b => !tokens.includes(b && (b.voterToken || b.voterId)));
+            if (next.length !== legacy.length) await safePutKV(KV, 'ballots', JSON.stringify(next));
+            return jsonResponse({ success: true, dropped: tokens.length, snapshot });
+          }
+
+          if (action === 'rebind-voter') {
+            const fromToken = body.fromToken;
+            const toToken = body.toToken;
+            if (!fromToken || !toToken) {
+              return jsonResponse({ error: '需要 fromToken 与 toToken' }, 400);
+            }
+            if (fromToken === toToken) {
+              return jsonResponse({ error: '新旧凭据相同，无需处理' }, 400);
+            }
+            if (dryRun) {
+              // 预览时优先看主库（镜像可能还没同步），主库没有再回落到 KV
+              let src = null;
+              if (DB) {
+                try {
+                  const row = await DB.prepare('SELECT * FROM ballots WHERE voter_token = ?').bind(fromToken).first();
+                  if (row) {
+                    src = {
+                      id: row.id,
+                      voterToken: row.voter_token,
+                      topicIds: JSON.parse(row.topic_ids || '[]'),
+                      comment: row.comment || '',
+                      clientIp: row.client_ip || '',
+                      votedAt: row.voted_at
+                    };
+                  }
+                } catch (e) {}
+              }
+              if (!src) src = await getJsonKV(KV, KV_BALLOT_PREFIX + fromToken, null);
+              return jsonResponse({ success: true, dryRun: true, fromToken, toToken, sourceBallot: src });
+            }
+            if (!DB) return jsonResponse({ error: '主库不可用，暂不能改绑' }, 503);
+
+            const src = await DB.prepare('SELECT * FROM ballots WHERE voter_token = ?').bind(fromToken).first();
+            if (!src) return jsonResponse({ error: '找不到原选票，请核对 fromToken' }, 404);
+            const target = await DB.prepare('SELECT voter_token FROM ballots WHERE voter_token = ?').bind(toToken).first();
+            if (target && body.overwrite !== true) {
+              return jsonResponse({ error: '目标设备已有选票；确认要覆盖请传 overwrite:true' }, 409);
+            }
+
+            const snapshot = await takeSnapshot(KV, DB, 'before-rebind');
+            const items = await DB.prepare('SELECT topic_id, voted_at FROM vote_items WHERE voter_token = ?').bind(fromToken).all();
+            const newBallotId = 'ballot-rebind-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+            const stmts = [
+              DB.prepare('DELETE FROM ballots WHERE voter_token = ? OR voter_token = ?').bind(toToken, fromToken),
+              DB.prepare('DELETE FROM vote_items WHERE voter_token = ? OR voter_token = ?').bind(toToken, fromToken),
+              DB.prepare(`INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at)
+                VALUES (?, ?, ?, ?, ?, ?)`)
+                .bind(newBallotId, toToken, src.topic_ids, src.comment || '', src.client_ip || '', src.voted_at)
+            ];
+            for (const it of (items.results || [])) {
+              stmts.push(DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)')
+                .bind(toToken, it.topic_id, it.voted_at));
+            }
+            try {
+              await DB.batch(stmts);
+            } catch (e) {
+              return jsonResponse({ error: '改绑失败，数据未变动：' + e.message, snapshot }, 500);
+            }
+
+            const kvSrc = await getJsonKV(KV, KV_BALLOT_PREFIX + fromToken, null);
+            if (kvSrc) {
+              await putKvBallot(KV, { ...kvSrc, voterToken: toToken, voterId: toToken });
+            }
+            await KV.delete(KV_BALLOT_PREFIX + fromToken).catch(() => {});
+
+            return jsonResponse({
+              success: true,
+              message: '已把选票改绑到新设备凭据，同学现在刷新页面即可看到并继续修改自己的选票',
+              fromToken, toToken, snapshot
+            });
+          }
+
+          return jsonResponse({ error: '未知的修复动作，支持 import-missing / drop-kv-orphans / rebind-voter' }, 400);
         }
 
         // GET /api/admin/backup (系统全量数据备份)
@@ -1658,10 +2290,10 @@ export default {
             } catch (e) {}
           }
           if (ballots.length === 0 && KV) {
-            ballots = await getJsonKV(KV, 'ballots', []);
+            ballots = await loadKvBallots(KV);
           }
           if (comments.length === 0 && KV) {
-            comments = await getJsonKV(KV, 'comments', []);
+            comments = await loadKvComments(KV);
           }
           return jsonResponse({
             success: true,
@@ -1671,53 +2303,130 @@ export default {
           });
         }
 
-        // POST /api/admin/restore (从备份中恢复全量数据，采用 50 语句安全切片)
+        // POST /api/admin/restore (从备份恢复数据)
+        // 与旧实现的关键差别：不再"先整表删除再分批插入"（中途失败会留下半残数据，
+        // 且备份里有非法条目时整批失败），改为按选民分组 upsert：
+        //   - 每个选民的 ballot 与其 vote_items 在同一批里，绝不会只恢复一半；
+        //   - 中途失败时库里的数据是"并集"，只会多不会少，不存在被清空的风险；
+        //   - 默认合并（merge）；想要与备份完全一致，传 replace:true（会删除备份中没有的选票）。
         if (path === '/api/admin/restore' && method === 'POST') {
-          const body = await request.json().catch(() => ({}));
-          const { data } = body;
-          if (!data) return jsonResponse({ error: '备份数据格式无效' }, 400);
-          if (data.settings) await safePutKV(KV, 'settings', JSON.stringify(data.settings));
-          if (data.topics && Array.isArray(data.topics)) await safePutKV(KV, 'topics', JSON.stringify(data.topics));
-          if (data.ballots && Array.isArray(data.ballots)) {
-            await safePutKV(KV, 'ballots', JSON.stringify(data.ballots));
-            for (const b of data.ballots) {
-              if (b.voterToken) {
-                await safePutKV(KV, 'voter:' + b.voterToken, JSON.stringify(b));
-              }
+          const { tooLarge, data: body } = await readJsonBody(request);
+          if (tooLarge) return jsonResponse({ error: '请求数据体积超限' }, 413);
+          const data = body.data;
+          if (!data || typeof data !== 'object') {
+            return jsonResponse({ error: '备份数据格式无效' }, 400);
+          }
+
+          // 逐条校验：非法条目只跳过并汇报，不让整次恢复失败
+          const rawBallots = Array.isArray(data.ballots) ? data.ballots : [];
+          const validBallots = [];
+          const invalid = [];
+          const seenTokens = new Set();
+          for (const b of rawBallots) {
+            if (!b || typeof b !== 'object' || typeof b.voterToken !== 'string' || !b.voterToken.trim()) {
+              invalid.push({ reason: '缺少 voterToken', item: b });
+              continue;
+            }
+            if (!Array.isArray(b.topicIds)) {
+              invalid.push({ reason: 'topicIds 不是数组', voterToken: b.voterToken });
+              continue;
+            }
+            if (seenTokens.has(b.voterToken)) {
+              invalid.push({ reason: '备份内同一 voterToken 重复，已取后者', voterToken: b.voterToken });
+            }
+            seenTokens.add(b.voterToken);
+            validBallots.push(b);
+          }
+          const validComments = Array.isArray(data.comments) ? data.comments.filter(c => c && c.id) : [];
+          const replace = body.replace === true;
+
+          const snapshot = await takeSnapshot(KV, DB, 'before-restore');
+
+          if (KV) {
+            if (data.settings) await safePutKV(KV, 'settings', JSON.stringify(data.settings));
+            if (Array.isArray(data.topics)) await safePutKV(KV, 'topics', JSON.stringify(data.topics));
+            await safePutKV(KV, 'ballots', JSON.stringify(validBallots));
+            for (const b of validBallots) await putKvBallot(KV, b);
+            if (validComments.length) {
+              await safePutKV(KV, 'comments', JSON.stringify(validComments));
+              for (const c of validComments) await putKvComment(KV, c);
             }
           }
-          if (data.comments && Array.isArray(data.comments)) {
-            await safePutKV(KV, 'comments', JSON.stringify(data.comments));
-          }
-          if (DB && data.ballots && Array.isArray(data.ballots)) {
-            try {
-              const allStatements = [
-                DB.prepare('DELETE FROM ballots'),
-                DB.prepare('DELETE FROM vote_items')
-              ];
-              for (const b of data.ballots) {
-                const tids = b.topicIds || [];
-                allStatements.push(
-                  DB.prepare('INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at) VALUES (?, ?, ?, ?, ?, ?)')
-                    .bind(b.id, b.voterToken, JSON.stringify(tids), b.comment || '', b.clientIp || '', b.votedAt || new Date().toISOString())
-                );
+
+          let applied = 0;
+          const failed = [];
+          if (DB) {
+            for (const b of validBallots) {
+              const votedAt = b.votedAt || new Date().toISOString();
+              const tids = b.topicIds || [];
+              try {
+                // 单个选民一批（ballot + 其全部明细），保证"要么全恢复、要么不动"
+                const stmts = [
+                  DB.prepare(`INSERT INTO ballots (id, voter_token, topic_ids, comment, client_ip, voted_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(voter_token) DO UPDATE SET
+                      topic_ids = excluded.topic_ids, comment = excluded.comment,
+                      client_ip = excluded.client_ip, voted_at = excluded.voted_at`)
+                    .bind(b.id || ('ballot-restore-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)),
+                      b.voterToken, JSON.stringify(tids), b.comment || '', b.clientIp || '', votedAt),
+                  DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(b.voterToken)
+                ];
                 for (const tid of tids) {
-                  allStatements.push(
-                    DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)')
-                      .bind(b.voterToken, tid, b.votedAt || new Date().toISOString())
-                  );
+                  stmts.push(DB.prepare('INSERT INTO vote_items (voter_token, topic_id, voted_at) VALUES (?, ?, ?)')
+                    .bind(b.voterToken, tid, votedAt));
                 }
+                await DB.batch(stmts);
+                applied++;
+              } catch (e) {
+                failed.push({ voterToken: b.voterToken, error: e.message });
               }
-              // 50 条切片批次执行，彻底规避 D1 batch 限制
-              for (let i = 0; i < allStatements.length; i += 50) {
-                const chunk = allStatements.slice(i, i + 50);
-                await DB.batch(chunk);
-              }
-            } catch (e) {
-              console.warn('Restore D1 batch error:', e.message);
             }
+
+            for (const c of validComments) {
+              try {
+                await DB.prepare(`INSERT INTO comments (id, topic_id, topic_title, voter_token, author_name, text, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET text = excluded.text, author_name = excluded.author_name`)
+                  .bind(c.id, c.topicId || 'general', c.topicTitle || '', c.voterId || '', c.authorName || '同学', c.text || '', c.createdAt || new Date().toISOString())
+                  .run();
+              } catch (e) {
+                failed.push({ commentId: c.id, error: e.message });
+              }
+            }
+
+            // replace 模式：删掉备份里没有的选票（默认不做，避免误删新票）
+            let removed = 0;
+            if (replace) {
+              try {
+                const existing = await DB.prepare('SELECT voter_token, id FROM ballots').all();
+                const stale = (existing.results || []).filter(r => !seenTokens.has(r.voter_token));
+                for (const r of stale) {
+                  await DB.batch([
+                    DB.prepare('DELETE FROM ballots WHERE id = ?').bind(r.id),
+                    DB.prepare('DELETE FROM vote_items WHERE voter_token = ?').bind(r.voter_token)
+                  ]);
+                  await KV.delete(KV_BALLOT_PREFIX + r.voter_token).catch(() => {});
+                  removed++;
+                }
+              } catch (e) {
+                failed.push({ phase: 'replace-cleanup', error: e.message });
+              }
+            }
+
+            return jsonResponse({
+              success: failed.length === 0,
+              message: failed.length === 0
+                ? `备份恢复完成：${applied} 张选票${replace ? `，清理 ${removed} 张备份外的选票` : '（合并模式，未删除任何现有选票）'}`
+                : `部分条目恢复失败（成功 ${applied} 条），其余数据未受影响`,
+              applied,
+              invalid,
+              failed,
+              replace,
+              snapshot
+            }, failed.length === 0 ? 200 : 207);
           }
-          return jsonResponse({ success: true, message: '系统数据已成功从备份恢复！' });
+
+          return jsonResponse({ success: true, message: 'KV 侧已恢复（主库未绑定，仅 KV 生效）', applied: 0, invalid, snapshot });
         }
 
         // GET /api/admin/diagnostics (系统边缘节点与数据监控)
@@ -1738,8 +2447,8 @@ export default {
               }
             } catch (e) {}
           }
-          const kvBallots = await getJsonKV(KV, 'ballots', []);
-          const kvComments = await getJsonKV(KV, 'comments', []);
+          const kvBallots = await loadKvBallots(KV);
+          const kvComments = await loadKvComments(KV);
           return jsonResponse({
             success: true,
             engine: DB ? 'Cloudflare D1 (SQLite ACID) + KV Hybrid' : 'Cloudflare KV Only',
@@ -1754,8 +2463,28 @@ export default {
 
       return jsonResponse({ error: 'Endpoint not found' }, 404);
     } catch (err) {
-      console.error('Unhandled worker error:', err);
-      return jsonResponse({ error: err.message || 'Internal server error' }, 500);
+      // 不回显内部错误细节（D1/绑定信息），只给一个可对照日志的编号
+      const errId = 'err-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+      console.error(`[${errId}] Unhandled worker error:`, err && err.message ? err.message : err);
+      return jsonResponse({ error: '服务暂时不可用，请稍后重试', errId }, 500);
+    }
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const res = await handleRequest(request, env, ctx);
+    // 统一收口 CORS：只允许自家站点跨域读取，其它来源不给跨域许可
+    // （不限制的话，任意网页都能让访客的浏览器替它打我们的接口）
+    try {
+      const cors = corsFor(request);
+      const headers = new Headers(res.headers);
+      const allow = cors['Access-Control-Allow-Origin'];
+      if (allow) headers.set('Access-Control-Allow-Origin', allow);
+      else headers.delete('Access-Control-Allow-Origin');
+      headers.set('Vary', 'Origin');
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+    } catch (e) {
+      return res;
     }
   }
 };
