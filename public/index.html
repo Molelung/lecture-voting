@@ -220,69 +220,69 @@
         </div>
       </div>
 
-      <!-- 高品质分类筛选栏 (手机端支持吸顶 + 平滑横滑 + 全部分类抽屉) -->
-      <div v-if="activeTab === 'vote'" class="sticky top-[49px] sm:top-[53px] z-30 bg-[#fbfbfa]/95 backdrop-blur-md -mx-4 px-4 sm:mx-0 sm:px-0 py-2 sm:py-0 border-b border-[#e9e9e7]/80 sm:border-0 mb-3 sm:mb-4 transition-all">
-        <div class="relative flex items-center">
-          
-          <!-- 加载中分类骨架屏 -->
-          <div v-if="loading" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 w-full">
-            <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
-            <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
-            <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
-            <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
-          </div>
+      <!-- ================= 视图 1：紧凑折叠式社课与分类卡片 ================= -->
+      <div v-if="activeTab === 'vote'" class="relative">
+        <!-- 高品质分类筛选栏 (手机端支持吸顶 + 平滑横滑 + 全部分类抽屉) -->
+        <div class="sticky top-[49px] sm:top-[53px] z-30 bg-[#fbfbfa]/95 backdrop-blur-md -mx-4 px-4 sm:mx-0 sm:px-0 py-2 sm:py-0 border-b border-[#e9e9e7]/80 sm:border-0 mb-3 sm:mb-4 transition-all">
+          <div class="relative flex items-center">
+            
+            <!-- 加载中分类骨架屏 -->
+            <div v-if="loading" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 w-full">
+              <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
+              <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
+              <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
+              <div class="h-8 w-16 skeleton-shimmer rounded-lg shrink-0"></div>
+            </div>
 
-          <!-- 左右平滑滚动分类胶囊条 (数据就绪后呈现) -->
-          <div 
-            v-else
-            ref="categoryScrollContainer"
-            class="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-1 pr-6 sm:pr-0 py-0.5">
+            <!-- 左右平滑滚动分类胶囊条 (数据就绪后呈现) -->
+            <div 
+              v-else
+              ref="categoryScrollContainer"
+              class="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-1 pr-6 sm:pr-0 py-0.5">
+              <button 
+                v-for="cat in categories" 
+                :key="cat.name"
+                @click="selectCategory(cat.name, $event)"
+                :class="activeCategory === cat.name ? 'bg-[#2f3437] text-white font-medium shadow-2xs' : 'bg-white text-[#5a5853] hover:text-[#2f3437] hover:bg-[#f7f6f3] border border-[#e9e9e7]'"
+                class="text-xs h-8 px-3 rounded-lg transition-all duration-150 whitespace-nowrap flex items-center gap-1.5 shrink-0 active:scale-95">
+                <span>{{ cat.name }}</span>
+                <span 
+                  :class="activeCategory === cat.name ? 'bg-white/20 text-white' : 'bg-[#f0efe9] text-[#787774]'"
+                  class="text-[10px] px-1.5 py-0.2 rounded-full font-mono">
+                  {{ cat.count }}
+                </span>
+              </button>
+            </div>
+
+            <!-- 手机端右侧渐变淡出遮罩 (视觉提示可继续横滑) -->
+            <div class="pointer-events-none absolute right-16 top-0 bottom-0 w-8 bg-gradient-to-l from-[#fbfbfa] to-transparent sm:hidden"></div>
+
+            <!-- 手机端全部分类展开抽屉按钮 (Drawer Sheet Trigger) -->
             <button 
-              v-for="cat in categories" 
-              :key="cat.name"
-              @click="selectCategory(cat.name, $event)"
-              :class="activeCategory === cat.name ? 'bg-[#2f3437] text-white font-medium shadow-2xs' : 'bg-white text-[#5a5853] hover:text-[#2f3437] hover:bg-[#f7f6f3] border border-[#e9e9e7]'"
-              class="text-xs h-8 px-3 rounded-lg transition-all duration-150 whitespace-nowrap flex items-center gap-1.5 shrink-0 active:scale-95">
-              <span>{{ cat.name }}</span>
-              <span 
-                :class="activeCategory === cat.name ? 'bg-white/20 text-white' : 'bg-[#f0efe9] text-[#787774]'"
-                class="text-[10px] px-1.5 py-0.2 rounded-full font-mono">
-                {{ cat.count }}
-              </span>
+              @click="showCategoryDrawer = true; triggerHaptic('light')" 
+              class="sm:hidden shrink-0 ml-1.5 h-8 px-2.5 rounded-lg border border-[#e9e9e7] bg-white text-[#5a5853] hover:text-[#2f3437] flex items-center gap-1 text-xs shadow-2xs active:scale-95 transition"
+              title="展开全部分类">
+              <svg class="w-3.5 h-3.5 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+              <span class="text-[11px] font-medium">分类</span>
             </button>
           </div>
+        </div>
 
-          <!-- 手机端右侧渐变淡出遮罩 (视觉提示可继续横滑) -->
-          <div class="pointer-events-none absolute right-16 top-0 bottom-0 w-8 bg-gradient-to-l from-[#fbfbfa] to-transparent sm:hidden"></div>
-
-          <!-- 手机端全部分类展开抽屉按钮 (Drawer Sheet Trigger) -->
+        <!-- 激活状态筛选提示条 (便于一键重置) -->
+        <div v-if="activeCategory !== '全部' || searchQuery" class="flex items-center justify-between text-xs text-[#787774] px-1 mb-3">
+          <div class="flex items-center gap-1.5 truncate">
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#2f3437]"></span>
+            <span>筛选：<strong class="text-[#2f3437]">{{ activeCategory }}</strong></span>
+            <span v-if="searchQuery" class="truncate text-[#2f3437]">含 “{{ searchQuery }}”</span>
+            <span class="text-[#9b9a97]">({{ filteredTopics.length }} 门)</span>
+          </div>
           <button 
-            @click="showCategoryDrawer = true; triggerHaptic('light')" 
-            class="sm:hidden shrink-0 ml-1.5 h-8 px-2.5 rounded-lg border border-[#e9e9e7] bg-white text-[#5a5853] hover:text-[#2f3437] flex items-center gap-1 text-xs shadow-2xs active:scale-95 transition"
-            title="展开全部分类">
-            <svg class="w-3.5 h-3.5 text-[#787774]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h7"></path></svg>
-            <span class="text-[11px] font-medium">分类</span>
+            @click="resetFilter" 
+            class="text-xs text-[#787774] hover:text-[#2f3437] underline decoration-dotted ml-2 shrink-0">
+            重置全部
           </button>
         </div>
-      </div>
 
-      <!-- 激活状态筛选提示条 (便于一键重置) -->
-      <div v-if="activeTab === 'vote' && (activeCategory !== '全部' || searchQuery)" class="flex items-center justify-between text-xs text-[#787774] px-1 mb-3">
-        <div class="flex items-center gap-1.5 truncate">
-          <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#2f3437]"></span>
-          <span>筛选：<strong class="text-[#2f3437]">{{ activeCategory }}</strong></span>
-          <span v-if="searchQuery" class="truncate text-[#2f3437]">含 “{{ searchQuery }}”</span>
-          <span class="text-[#9b9a97]">({{ filteredTopics.length }} 门)</span>
-        </div>
-        <button 
-          @click="resetFilter" 
-          class="text-xs text-[#787774] hover:text-[#2f3437] underline decoration-dotted ml-2 shrink-0">
-          重置全部
-        </button>
-      </div>
-
-      <!-- ================= 视图 1：紧凑折叠式社课卡片列表 ================= -->
-      <div v-if="activeTab === 'vote'">
         <!-- 骨架屏加载态：黑色高光线条扫光流动的 Notion 质感卡片 (网络请求中严格展示) -->
         <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
           <div v-for="i in 6" :key="i" class="notion-card p-4 bg-white border border-[#e9e9e7] rounded-xl overflow-hidden shadow-2xs">
@@ -567,7 +567,7 @@
       </div>
 
       <!-- ================= 同学留言与期待 (公共交流讨论区) ================= -->
-      <section class="mt-12 pt-8 border-t border-[#e9e9e7]">
+      <section class="mt-12 pt-8 border-t border-[#e9e9e7] scroll-mt-20">
         <!-- 区域标头 -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
