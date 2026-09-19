@@ -61,11 +61,13 @@ createApp({
     // 1. 设备匿名凭据（双轨 LocalStorage + Cookie 交叉恢复，防日期变更、防微信清理缓存）
     let storedToken = getSafeStorage('lecture_voter_token') || getCookie('lecture_voter_token');
 
-    // 从老域名带过来的凭据：仅在本地还没有凭据时采用（避免覆盖本域名上正在使用的身份）
+    // 从老域名带过来的凭据：本域名上还没投过票时采用它（找回老选票），
+    // 若本域名上已经投过票则保留本域名的身份，避免中途换掉正在使用的凭据。
     const handoffMatch = (typeof window !== 'undefined' ? window.location.hash : '').match(/[#&]t=([^&]+)/);
     if (handoffMatch) {
-      if (!storedToken) {
-        try { storedToken = decodeURIComponent(handoffMatch[1]); } catch (e) {}
+      const incomingToken = decodeURIComponent(handoffMatch[1]);
+      if (!storedToken || !getSafeStorage('lecture_voter_ballot')) {
+        storedToken = incomingToken;
       }
       try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
     }
