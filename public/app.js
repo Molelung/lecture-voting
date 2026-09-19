@@ -402,6 +402,22 @@ createApp({
     const mobileUrl = ref(window.location.href.split('?')[0].split('#')[0]);
     const showQrModal = ref(false);
 
+    // 投票成功后的社课群邀请卡片
+    const showGroupModal = ref(false);
+    const closeGroupModal = () => {
+      showGroupModal.value = false;
+      triggerHaptic('light');
+    };
+    // 等烟花先炸开，再让二维码卡片跟着弹出来
+    const revealGroupCard = () => {
+      setTimeout(() => {
+        showGroupModal.value = true;
+        if (window.fireAmieConfetti) {
+          window.fireAmieConfetti();
+        }
+      }, 520);
+    };
+
     // 触觉反馈 (Haptic)
     const triggerHaptic = (type = 'light') => {
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -997,6 +1013,9 @@ createApp({
           window.fireAmieConfetti();
         }
 
+        // 本设备第一次投出选票时，烟花绽放后弹出社课群邀请
+        const isFirstVote = !hasVoted.value;
+
         hasVoted.value = true;
         userVote.value = res.vote;
         // 即时写入本地存储，确保离线、跨日访问毫秒级渲染
@@ -1007,6 +1026,8 @@ createApp({
 
         // 即刻解锁票数与热度排行榜及公共讨论区
         await Promise.all([loadTopics(), loadResults(), loadPublicComments()]);
+
+        if (isFirstVote) revealGroupCard();
       } catch (err) {
         console.error('投票失败:', err);
         // 如果是断网或网络超时无响应，自动保存至离线队列，网络恢复时自愈同步
@@ -1663,11 +1684,14 @@ createApp({
           });
           try { localStorage.removeItem('lecture_pending_vote'); } catch (e) {}
           if (res && res.vote) {
+            // 弱网下暂存的票此刻才真正入账，同样算"完成投票"，一起弹群邀请
+            const isFirstVote = !hasVoted.value;
             hasVoted.value = true;
             userVote.value = res.vote;
             setSafeStorage('lecture_voter_ballot', JSON.stringify(res.vote));
             showToast('网络已恢复，您的暂存选票已成功同步并入账！', 'success');
             await Promise.all([loadTopics(), loadResults(), loadPublicComments()]);
+            if (isFirstVote) revealGroupCard();
           }
         }
       } catch (e) {
@@ -1748,6 +1772,8 @@ createApp({
       deleteComment,
       mobileUrl,
       showQrModal,
+      showGroupModal,
+      closeGroupModal,
       toast,
       isAdmin,
       showAdminModal,

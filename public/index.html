@@ -891,6 +891,29 @@
       </div>
     </div>
 
+    <!-- ================= 弹窗：投票成功后的社课群邀请（跟随烟花一起弹出） ================= -->
+    <div v-if="showGroupModal" class="modal-overlay" @click.self="closeGroupModal">
+      <div class="modal-content max-w-[20rem] w-full px-7 pt-7 pb-6 text-center bg-white border border-[#e9e9e7] rounded-2xl shadow-xl">
+        <div class="modal-sheet-handle"></div>
+
+        <!-- 群二维码卡片（长按/扫码均可识别） -->
+        <div class="group-qr-wrap mb-5">
+          <div class="group-qr-glow"></div>
+          <img src="./wechat-group-qr.png" alt="朋辈社课群二维码" class="group-qr-img" />
+        </div>
+
+        <h3 class="group-title font-serif text-base font-bold text-[#2f3437] mb-2.5">朋辈社课，喜欢您来</h3>
+        <p class="group-desc text-xs text-[#787774] leading-relaxed mb-1">欢迎加入社课群，获得实时动态社课消息！</p>
+        <p class="group-desc text-xs text-[#787774] leading-relaxed mb-5">更有一手资料与更多惊喜喵~</p>
+
+        <button
+          @click="closeGroupModal"
+          class="w-full bg-[#2f3437] hover:bg-[#18181b] text-white text-xs py-2.5 rounded-lg font-medium transition">
+          好的，长按识别进群
+        </button>
+      </div>
+    </div>
+
     <!-- ================= 弹窗：管理后台 (密码登录与全功能管理中心) ================= -->
     <div v-if="showAdminModal" class="modal-overlay" @click.self="showAdminModal = false">
       <div class="modal-content max-w-xl w-full p-5 sm:p-6 max-h-[88vh] flex flex-col bg-white border border-[#e9e9e7] rounded-2xl shadow-xl">

@@ -84,6 +84,12 @@ Worker 绑定 `VOTING_KV`（KV）+ `DB`（D1），`vote.molan.cc.cd` 与 `vote.l
 `public/qrcode.png` 与 `public/share_poster.png` 内的二维码均指向 `https://vote.molan.cc.cd/`。
 站内「分享」弹窗的二维码按当前访问地址实时生成，会自动跟随所访问的域名。
 
+**社课群邀请码**：`public/wechat-group-qr.png`。同学投出选票后，会有一张邀请卡片跟随
+烟花动画弹出，展示这个二维码并引导入群（仅首次投票弹出，改票不重复打扰）。
+微信群二维码有效期只有 7 天，**过期前需要替换该文件**：在微信「群聊 → 右上角 → 群二维码」
+重新保存，裁到只剩二维码（保留白边），覆盖同名文件后 `git push`，约 1 分钟内全网上线。
+文案在 `public/index.html` 的 `showGroupModal` 区块中修改。
+
 ---
 
 ## 预置社课主题清单

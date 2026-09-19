@@ -319,6 +319,61 @@ body {
   margin: 0 auto 14px auto;
 }
 
+/* ── 投票成功后的社课群邀请卡片 ──
+   二维码跟着烟花的节奏弹出来：先放大过冲一下、再回弹落定 */
+.group-qr-wrap {
+  position: relative;
+  width: 10.5rem;
+  margin: 0 auto;
+  animation: qrPop 0.62s var(--ease-spring) both;
+}
+
+.group-qr-img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid #e9e9e7;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(47, 52, 55, 0.12);
+}
+
+/* 二维码背后缓慢呼吸的彩色光晕，和烟花同色系 */
+.group-qr-glow {
+  position: absolute;
+  inset: -16px;
+  border-radius: 26px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.22), rgba(236, 72, 153, 0.15) 46%, transparent 72%);
+  animation: qrGlow 2.6s ease-in-out infinite;
+}
+
+.group-title {
+  animation: qrTextIn 0.5s ease-out both;
+  animation-delay: 0.18s;
+}
+
+.group-desc {
+  animation: qrTextIn 0.5s ease-out both;
+  animation-delay: 0.28s;
+}
+
+@keyframes qrPop {
+  0%   { transform: scale(0.55) translateY(22px); opacity: 0; }
+  62%  { transform: scale(1.05) translateY(-3px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+@keyframes qrGlow {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.07); }
+}
+
+@keyframes qrTextIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* 移动端专享优化 */
 @media (max-width: 640px) {
   input, select, textarea {
