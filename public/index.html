@@ -906,30 +906,29 @@
         <p class="group-desc text-xs text-[#787774] leading-relaxed mb-1">欢迎加入社课群，获得实时动态社课消息！</p>
         <p class="group-desc text-xs text-[#787774] leading-relaxed mb-4">更有一手资料与更多惊喜喵~</p>
 
-        <!-- 进群指引：以"保存到相册再扫"为主路径（任何环境都走得通），
-             微信内额外提示可以直接长按识别（这个能力不一定都出现，所以只作补充） -->
+        <!-- 进群指引：微信内长按可直接识别；识别不出来时，下面还留了一条保存图片的兜底路径 -->
         <div class="group-hint">
           <template v-if="isWeChat">
-            长按上方二维码保存到相册（若弹出「识别图中二维码」可直接点）→ 打开微信「扫一扫」→ 点右上角「相册」→ 选它进群
+            长按上方二维码 → 点「识别图中二维码」即可进群
           </template>
           <template v-else>
             长按或右键保存图片 → 打开微信「扫一扫」→ 点右上角「相册」→ 选它进群
           </template>
         </div>
 
-        <div class="flex items-center gap-2">
-          <button
-            @click="closeGroupModal"
-            class="w-1/3 text-xs py-2.5 rounded-lg border border-[#e9e9e7] text-[#787774] hover:bg-[#f7f6f3] transition">
-            先不用了
-          </button>
-          <a
-            :href="groupQrUrl"
-            download="朋辈社课群二维码.png"
-            class="flex-1 text-center bg-[#2f3437] hover:bg-[#18181b] text-white text-xs py-2.5 rounded-lg font-medium transition">
-            保存二维码
-          </a>
-        </div>
+        <button
+          @click="closeGroupModal"
+          class="w-full bg-[#2f3437] hover:bg-[#18181b] text-white text-xs py-2.5 rounded-lg font-medium transition">
+          知道了
+        </button>
+
+        <!-- 兜底：识别不出来时，把图存下来再用微信扫一扫的相册入口 -->
+        <a
+          :href="groupQrUrl"
+          download="朋辈社课群二维码.png"
+          class="group-save-link">
+          未进群？点此保存图片
+        </a>
       </div>
     </div>
 
