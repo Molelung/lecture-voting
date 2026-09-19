@@ -404,6 +404,10 @@ createApp({
 
     // 投票成功后的社课群邀请卡片
     const showGroupModal = ref(false);
+    const groupQrUrl = './wechat-group-qr.png';
+    // 微信内置浏览器长按图片可以直接「识别图中二维码」；
+    // Safari / Chrome 没有这个能力，只能先保存图片再走微信「扫一扫 → 相册」，所以指引要分开写
+    const isWeChat = typeof navigator !== 'undefined' && /micromessenger/i.test(navigator.userAgent || '');
     const closeGroupModal = () => {
       showGroupModal.value = false;
       triggerHaptic('light');
@@ -1027,6 +1031,7 @@ createApp({
         // 即刻解锁票数与热度排行榜及公共讨论区
         await Promise.all([loadTopics(), loadResults(), loadPublicComments()]);
 
+        // 本设备首次投出选票时弹出社课群邀请（改票不再重复打扰）
         if (isFirstVote) revealGroupCard();
       } catch (err) {
         console.error('投票失败:', err);
@@ -1684,7 +1689,7 @@ createApp({
           });
           try { localStorage.removeItem('lecture_pending_vote'); } catch (e) {}
           if (res && res.vote) {
-            // 弱网下暂存的票此刻才真正入账，同样算"完成投票"，一起弹群邀请
+            // 弱网下暂存的票此刻才真正入账，同样按"首次投票"处理
             const isFirstVote = !hasVoted.value;
             hasVoted.value = true;
             userVote.value = res.vote;
@@ -1774,6 +1779,8 @@ createApp({
       showQrModal,
       showGroupModal,
       closeGroupModal,
+      groupQrUrl,
+      isWeChat,
       toast,
       isAdmin,
       showAdminModal,
