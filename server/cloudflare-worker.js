@@ -1340,11 +1340,23 @@ async function handleRequest(request, env, ctx) {
           (settings.resultsVisibility === 'after_vote' && hasVoted);
 
         if (!canViewCounts) {
+          // 锁定态也要让同学看到有哪些课，只是把票数、占比、排名全部隐去。
+          // 顺序保持课程原始顺序，绝不能按票数排——否则排名就泄露了。
+          const lockedStats = topics.map(t => ({
+            id: t.id,
+            title: t.title,
+            speaker: t.speaker,
+            category: t.category,
+            tag: t.tag,
+            count: null,
+            percentage: null,
+            locked: true
+          }));
           return jsonResponse({
             success: true,
             locked: true,
             message: '投出你的心仪选票后，即刻解锁实时热度排行！',
-            stats: { totalVoters, totalVotesCast: null, topicStats: [] }
+            stats: { totalVoters, totalVotesCast: null, topicStats: lockedStats }
           });
         }
 
