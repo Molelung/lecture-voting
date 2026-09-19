@@ -494,6 +494,132 @@ async function safePutKV(KV, key, value, options = {}) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 前台页面边缘直发（不再 302 跳转到 GitHub Pages）
+// 为什么放在这里：
+//   1. 同学直连 github.io 在国内经常被限速或超时，改由 Cloudflare 边缘就近响应；
+//   2. 页面与 /api 同源后，带自定义头的请求不再触发 CORS 预检，少一次跨域往返；
+//   3. 源站(GitHub)临时不可用时，仍能发出上一次缓存的副本，而不是白屏。
+// 页面内容仍以 GitHub 仓库为唯一来源，这里只做带缓存的只读转发，不改写任何内容。
+// ─────────────────────────────────────────────────────────────────────────────
+const STATIC_ORIGIN = 'https://molelung.github.io/lecture-voting';
+const STATIC_ENTRY_TTL = 604800; // 边缘缓存条目存活 7 天（条目活得久，源站故障才有兜底副本）
+
+// 新鲜度窗口：超过窗口才回源校验，避免每次访问都打到 GitHub
+function staticFreshWindow(path) {
+  if (path.startsWith('/vendor/')) return 3600;
+  if (/\.(png|jpe?g|gif|webp|svg|ico|woff2?)$/i.test(path)) return 3600;
+  return 60; // html / js / css：60 秒后回源校验，部署一分钟内全量生效
+}
+
+function staticContentType(path, fromOrigin) {
+  const ext = (path.match(/\.([a-z0-9]+)$/i) || [])[1];
+  const map = {
+    html: 'text/html; charset=utf-8',
+    js: 'application/javascript; charset=utf-8',
+    mjs: 'application/javascript; charset=utf-8',
+    css: 'text/css; charset=utf-8',
+    json: 'application/json; charset=utf-8',
+    svg: 'image/svg+xml',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    webp: 'image/webp',
+    ico: 'image/x-icon',
+    woff2: 'font/woff2',
+    txt: 'text/plain; charset=utf-8'
+  };
+  return map[ext] || fromOrigin || 'application/octet-stream';
+}
+
+function buildStaticResponse(body, contentType, maxAge, cacheState) {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': `public, max-age=${maxAge}`,
+      'X-Edge-Cache': cacheState,
+      'Access-Control-Allow-Origin': '*',
+      'X-Content-Type-Options': 'nosniff'
+    }
+  });
+}
+
+// 边缘与源站都拿不到页面时的兜底：自动重试 + 备用线路入口（弱网下不给同学白屏）
+function staticUnavailablePage(host) {
+  const alt = host === 'vote.molan.cc.cd' ? 'vote.listener.ccwu.cc' : 'vote.molan.cc.cd';
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="3">
+<title>正在连接投票页面…</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#fbfbfa;color:#2f3437;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.box{text-align:center;padding:32px 24px;max-width:22rem}h1{font-size:1.05rem;font-weight:600;margin:0 0 8px}
+p{font-size:.82rem;color:#787774;line-height:1.7;margin:0 0 18px}
+a{display:inline-block;font-size:.8rem;color:#2f3437;border:1px solid #e9e9e7;border-radius:8px;
+padding:9px 16px;text-decoration:none;background:#fff}
+.sp{width:22px;height:22px;margin:0 auto 16px;border:2px solid #e9e9e7;border-top-color:#787774;
+border-radius:50%;animation:r .9s linear infinite}@keyframes r{to{transform:rotate(360deg)}}</style>
+</head><body><div class="box"><div class="sp"></div>
+<h1>网络有点不稳定，正在重连…</h1>
+<p>页面会在 3 秒后自动重试，请保持网络畅通。<br>若一直打不开，可切换到备用线路。</p>
+<a href="https://${alt}/">切换到备用线路 ${alt}</a></div></body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }
+  });
+}
+
+async function serveStaticAsset(request, ctx, path) {
+  if (path === '' || path === '/') path = '/index.html';
+  else if (path.endsWith('/')) path += 'index.html';
+  if (path.includes('..')) return new Response('Bad Request', { status: 400 });
+
+  const isHead = request.method === 'HEAD';
+  const fresh = staticFreshWindow(path);
+  const cache = caches.default;
+  // 固定缓存键：两个接入域名共用同一份边缘副本
+  const cacheKey = new Request('https://static.lecture-voting.internal' + path, { method: 'GET' });
+
+  let cached = null;
+  try { cached = await cache.match(cacheKey); } catch (e) {}
+  if (cached) {
+    const cachedAt = Number(cached.headers.get('x-cached-at') || 0);
+    if (cachedAt && (Date.now() - cachedAt) / 1000 < fresh) {
+      const type = cached.headers.get('content-type') || 'application/octet-stream';
+      return buildStaticResponse(isHead ? null : await cached.arrayBuffer(), type, fresh, 'HIT');
+    }
+  }
+
+  try {
+    const originRes = await fetch(STATIC_ORIGIN + path, {
+      headers: { 'User-Agent': 'lecture-voting-edge/1.0', 'Accept': '*/*' }
+    });
+    if (originRes.ok) {
+      const body = await originRes.arrayBuffer();
+      const contentType = staticContentType(path, originRes.headers.get('content-type'));
+      // 写缓存用长 TTL（条目活得久才能兜底），返回给同学时只给短 TTL
+      const forCache = new Response(body, {
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': `public, max-age=${STATIC_ENTRY_TTL}`,
+          'x-cached-at': String(Date.now())
+        }
+      });
+      ctx.waitUntil(cache.put(cacheKey, forCache).catch(() => {}));
+      return buildStaticResponse(isHead ? null : body, contentType, fresh, 'MISS');
+    }
+  } catch (e) {
+    // 回源失败 → 落到下面的缓存兜底
+  }
+
+  if (cached) {
+    const type = cached.headers.get('content-type') || 'application/octet-stream';
+    return buildStaticResponse(isHead ? null : await cached.arrayBuffer(), type, fresh, 'STALE');
+  }
+  return staticUnavailablePage(new URL(request.url).hostname);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const startTime = Date.now();
@@ -503,6 +629,11 @@ export default {
 
     if (method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
+
+    // 非 /api 路径：直接由边缘发出前台页面与静态资源（与 API 同源，弱网更稳、免跨域预检）
+    if (!path.startsWith('/api/') && (method === 'GET' || method === 'HEAD')) {
+      return serveStaticAsset(request, ctx, path);
     }
 
     // 防护：检查 Payload 尺寸，杜绝超大 Body 耗尽 Worker 边缘内存
@@ -528,11 +659,6 @@ export default {
     const isAdmin = !!(adminUser && adminUser.role === 'admin');
 
     try {
-      // 根路径直连智能跳转
-      if ((path === '/' || path === '/index.html') && method === 'GET') {
-        return Response.redirect('https://molelung.github.io/lecture-voting/', 302);
-      }
-
       // 0. GET /api/health
       if (path === '/api/health' && method === 'GET') {
         const dur = Date.now() - startTime;

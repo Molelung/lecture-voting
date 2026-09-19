@@ -53,6 +53,39 @@ http://<你的电脑局域网IP>:3000
 
 ---
 
+## 线上部署与线路说明
+
+### 访问地址
+| 用途 | 地址 | 说明 |
+| --- | --- | --- |
+| 正式入口（推荐） | `https://vote.molan.cc.cd/` | 页面与接口同源，均由 Cloudflare 边缘就近直发 |
+| 备用入口 | `https://vote.listener.ccwu.cc/` | 与正式入口互为备份，主线路异常时自动切换 |
+| 老入口 | `https://molelung.github.io/lecture-voting/` | 打开后自动升级跳转到正式入口，并带上原有投票凭据 |
+
+### 为什么页面不再直接从 GitHub Pages 打开
+`public/` 目录虽然仍由 GitHub Pages 托管，但线上页面是由 **Cloudflare Worker（`lecture-voting-api`）反代 + 边缘缓存** 发出的：
+- 同学们直连 `github.io` 在国内经常被限速甚至超时，改由 Cloudflare 边缘就近响应后首屏明显变快；
+- 页面与 `/api` 变成**同源**，带 `X-Voter-Token` 的请求不再触发 CORS 预检，每次请求少一个往返；
+- 源站（GitHub）临时不可用时，边缘继续发出上次缓存的副本；连缓存都没有时返回自动重连页，而不是白屏；
+- 内容仍以本仓库为唯一来源，Worker 只做只读转发，不做任何改写，部署后约 1 分钟内全网生效。
+
+### Worker 部署
+改动 `server/cloudflare-worker.js` 后需要重新发布 Worker（`deploy_worker.mjs`，需含 Workers Scripts:Edit 权限的 Cloudflare API Token）。
+Worker 绑定 `VOTING_KV`（KV）+ `DB`（D1），`vote.molan.cc.cd` 与 `vote.listener.ccwu.cc` 均以 Workers 自定义域名方式绑定。
+
+### 弱网与网络波动处理
+- **请求对冲**：主接入点超过 1.2 秒（写请求 2.5 秒）未响应，就并行发起备用接入点，谁先成功用谁，不必等满超时；
+- **短超时**：单次请求 4 秒（写 6 秒）即中断并切线路，取代原来漫长的 10 秒；
+- **接入点记忆**：上次可用的线路记在本地，刷新页面后不再从坏节点重新试错；
+- **网络层失败一定抛出**：DNS 解析失败、连接被掐断等都会触发切换，不再静默变成"看似成功但没数据"；
+- **离线暂存队列**：彻底断网时选票先存本地，恢复联网后自动补投，幂等接口保证不会重复计票。
+
+### 二维码资产
+`public/qrcode.png` 与 `public/share_poster.png` 内的二维码均指向 `https://vote.molan.cc.cd/`。
+站内「分享」弹窗的二维码按当前访问地址实时生成，会自动跟随所访问的域名。
+
+---
+
 ## 预置社课主题清单
 
 系统已内置 6 门经典朋辈社课主题，开箱即用，管理员也可以直接在界面上替换为你自己的主题：

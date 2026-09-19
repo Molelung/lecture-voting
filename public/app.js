@@ -1,3 +1,38 @@
+// 老入口（GitHub Pages）自动升级到 Cloudflare 边缘域名。
+// 页面本身在两个域名上是同一份代码，但投票身份是按域名存在 localStorage 里的，
+// 所以换域名时必须把老域名上的设备凭据一起带过去，否则老同学会被当成新设备重复投票。
+// 放在最前面执行，避免旧页面先渲染一遍再跳走。
+const HANDOFF_HOST = 'molelung.github.io';
+const HANDOFF_TARGET = 'https://vote.molan.cc.cd';
+(async () => {
+  try {
+    if (typeof window === 'undefined' || window.location.hostname !== HANDOFF_HOST) return;
+    if (new URLSearchParams(window.location.search).has('stay')) return;
+    // 升级失败（例如备用线路也不通）后 30 分钟内不再探测，避免每次打开都白等
+    let failedAt = 0;
+    try { failedAt = Number(localStorage.getItem('lecture_handoff_failed_at') || 0); } catch (e) {}
+    if (Date.now() - failedAt < 30 * 60 * 1000) return;
+
+    // 先确认新线路确实可用再跳，避免把人送到打不开的地址
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(HANDOFF_TARGET + '/api/health', { signal: controller.signal, cache: 'no-store' });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error('target unavailable');
+
+    let token = null;
+    try { token = localStorage.getItem('lecture_voter_token'); } catch (e) {}
+    if (!token) {
+      const m = document.cookie.match(/(^|;\s*)lecture_voter_token=([^;]*)/);
+      if (m) { try { token = decodeURIComponent(m[2]); } catch (e) {} }
+    }
+    // 凭据走 URL 片段：不会出现在服务端日志里，落地后立刻抹掉
+    window.location.replace(HANDOFF_TARGET + '/' + (token ? '#t=' + encodeURIComponent(token) : ''));
+  } catch (e) {
+    try { localStorage.setItem('lecture_handoff_failed_at', String(Date.now())); } catch (e2) {}
+  }
+})();
+
 const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
 createApp({
@@ -25,6 +60,16 @@ createApp({
 
     // 1. 设备匿名凭据（双轨 LocalStorage + Cookie 交叉恢复，防日期变更、防微信清理缓存）
     let storedToken = getSafeStorage('lecture_voter_token') || getCookie('lecture_voter_token');
+
+    // 从老域名带过来的凭据：仅在本地还没有凭据时采用（避免覆盖本域名上正在使用的身份）
+    const handoffMatch = (typeof window !== 'undefined' ? window.location.hash : '').match(/[#&]t=([^&]+)/);
+    if (handoffMatch) {
+      if (!storedToken) {
+        try { storedToken = decodeURIComponent(handoffMatch[1]); } catch (e) {}
+      }
+      try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+    }
+
     if (!storedToken) {
       storedToken = 'voter-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
     }
@@ -412,14 +457,41 @@ createApp({
       }, 3000);
     };
 
-    // API 端点配置（优选国内极速直连域名，配置两组安全域名容灾）
-    const PRIMARY_API = 'https://vote.molan.cc.cd';
-    const FALLBACK_API = 'https://vote.listener.ccwu.cc';
-    const IS_LOCAL = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    // API 接入点配置
+    // 页面现在由 Cloudflare 边缘直发，与 /api 同源，所以把「同源」排在第一位：
+    // 同源请求不触发 CORS 预检（带 X-Voter-Token 时跨域会多一次 OPTIONS 往返），
+    // 弱网下少一次往返就少一次失败机会；另一个域名作为对冲备份。
+    const API_HOSTS = ['vote.molan.cc.cd', 'vote.listener.ccwu.cc'];
+    const PRIMARY_API = 'https://' + API_HOSTS[0];
+    const FALLBACK_API = 'https://' + API_HOSTS[1];
+    const CURRENT_HOST = typeof window !== 'undefined' ? window.location.hostname : '';
+    const IS_LOCAL = typeof window !== 'undefined' && (
+      CURRENT_HOST === 'localhost' || CURRENT_HOST === '127.0.0.1' || window.location.protocol === 'file:'
+    );
+    const SERVED_FROM_EDGE = API_HOSTS.includes(CURRENT_HOST);
 
-    let activeApiBase = IS_LOCAL ? '' : PRIMARY_API;
+    // '' 即同源相对路径（当前页面所在域名）
+    const API_CANDIDATES = IS_LOCAL
+      ? ['']
+      : (SERVED_FROM_EDGE
+          ? ['', CURRENT_HOST === API_HOSTS[0] ? FALLBACK_API : PRIMARY_API]
+          : [PRIMARY_API, FALLBACK_API]);
 
-    // API 请求封装（内置 10 秒超时中断、多通道凭据透传与主备双节点无感热切换）
+    // 记住上一次真实可用的接入点：刷新页面后不再从坏节点重新试错
+    const EP_KEY = 'lecture_api_base';
+    let activeApiBase = (() => {
+      if (IS_LOCAL) return '';
+      const saved = getSafeStorage(EP_KEY) || getCookie(EP_KEY);
+      return (saved !== null && API_CANDIDATES.includes(saved)) ? saved : API_CANDIDATES[0];
+    })();
+    const rememberApiBase = (base) => {
+      if (base === activeApiBase) return;
+      activeApiBase = base;
+      setSafeStorage(EP_KEY, base);
+      setCookie(EP_KEY, base, 365);
+    };
+
+    // API 请求封装：短超时中断 + 多通道凭据透传 + 对冲式双节点切换
     const api = async (url, options = {}) => {
       const headers = {
         'Content-Type': 'application/json; charset=utf-8',
@@ -446,22 +518,33 @@ createApp({
         targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'voterToken=' + encodeURIComponent(voterToken.value);
       }
 
-      const doFetch = async (baseUrl) => {
+      const isWrite = !!(options.method && options.method !== 'GET');
+      // 4 秒没回应就认为这一跳不稳（原来要等满 10 秒）；写请求稍宽一点，避免网络慢时误判
+      const attemptTimeout = isWrite ? 6000 : 4000;
+      // 主接入点迟迟不回就对冲：读 1.2 秒、写 2.5 秒后并行发起备用节点，谁先成功用谁
+      const hedgeDelay = isWrite ? 2500 : 1200;
+
+      // 单次请求：DNS/连接失败等网络层错误必须抛出，否则会被上层误判成请求成功
+      const controllers = [];
+      const failures = [];
+      const fired = new Set();
+      const order = [activeApiBase, ...API_CANDIDATES.filter(b => b !== activeApiBase)];
+      let settled = false;
+      let inflight = 0;
+
+      const fetchOnce = (baseUrl) => {
         const fullUrl = targetUrl.startsWith('/api') && baseUrl ? `${baseUrl}${targetUrl}` : targetUrl;
-        
-        // 10 秒超时中断控制器，彻底解决弱网挂起卡住问题
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        controllers.push(controller);
+        const timeoutId = setTimeout(() => controller.abort(), attemptTimeout);
 
-        try {
-          const res = await fetch(fullUrl, {
-            ...options,
-            body: bodyData,
-            headers,
-            signal: controller.signal
-          });
+        return fetch(fullUrl, {
+          ...options,
+          body: bodyData,
+          headers,
+          signal: controller.signal
+        }).then(async (res) => {
           clearTimeout(timeoutId);
-
           let data = {};
           try {
             data = await res.json();
@@ -484,53 +567,69 @@ createApp({
           }
 
           return data;
-        } catch (err) {
+        }).catch((err) => {
           clearTimeout(timeoutId);
-          if (err.name === 'AbortError') {
+          // 服务端已应答的业务错误（带 status）原样上抛，交给上层决定是否切换
+          if (err && err.status) throw err;
+          if (err && err.name === 'AbortError') {
             const timeoutErr = new Error('网络请求超时，请检查校园网/移动网络连接');
             timeoutErr.status = 408;
             throw timeoutErr;
           }
-        }
+          const netErr = new Error('网络连接中断，正在自动切换其他接入点');
+          netErr.status = 0;
+          netErr.networkError = true;
+          throw netErr;
+        });
       };
 
-      const doFetchWithJitter = async (baseUrl) => {
-        try {
-          return await doFetch(baseUrl);
-        } catch (err) {
-          // 4xx 业务错误无需重试
-          if (err.status && err.status >= 400 && err.status < 500) throw err;
-          // 移动蜂窝基站/Wi-Fi 微抖动：等待 350ms 后原位极速重试 1 次
-          await new Promise(r => setTimeout(r, 350));
-          return await doFetch(baseUrl);
-        }
-      };
+      return await new Promise((resolve, reject) => {
+        const abortRest = () => controllers.forEach(c => { try { c.abort(); } catch (e) {} });
 
-      try {
-        return await doFetchWithJitter(activeApiBase);
-      } catch (err) {
-        // 如果是 HTTP 4xx 业务级错误（如参数不全、密码错误、达到最大投票数等），说明服务完全畅通，绝对不触发节点切换
-        if (err.status && err.status >= 400 && err.status < 500) {
-          showToast(err.message, 'warning');
-          throw err;
-        }
+        const launch = (i) => {
+          if (settled || i >= order.length || fired.has(i)) return;
+          fired.add(i);
+          inflight++;
+          fetchOnce(order[i]).then(
+            (data) => {
+              if (settled) return;
+              settled = true;
+              rememberApiBase(order[i]);
+              abortRest();
+              resolve(data);
+            },
+            (err) => {
+              failures.push(err);
+              inflight--;
+              if (settled) return;
+              // 4xx（超时 408 与限流 429 除外）说明服务是通的，属业务级错误，绝不切换节点
+              const isBusinessError = err && err.status >= 400 && err.status < 500 && err.status !== 408 && err.status !== 429;
+              if (isBusinessError) {
+                settled = true;
+                abortRest();
+                reject(err);
+                return;
+              }
+              const nextIdx = order.findIndex((_, idx) => !fired.has(idx));
+              if (nextIdx !== -1) {
+                console.warn('接入点波动，正在切换备用节点…', order[nextIdx]);
+                launch(nextIdx);
+              } else if (inflight === 0) {
+                settled = true;
+                abortRest();
+                // 提示交给调用方决定：后台轮询失败不该反复弹窗打扰同学
+                reject(failures[failures.length - 1] || new Error('网络连接失败'));
+              }
+            }
+          );
+        };
 
-        // 仅在主域名出现断网/DNS解析失败/502网关异常/超时(408)时，无感热切换至对端节点
-        if (!IS_LOCAL) {
-          const alternateBase = activeApiBase === PRIMARY_API ? FALLBACK_API : PRIMARY_API;
-          try {
-            console.warn('当前接入点波动或超时，正在无感切换至对端备份节点...', alternateBase);
-            const data = await doFetchWithJitter(alternateBase);
-            activeApiBase = alternateBase;
-            return data;
-          } catch (fallbackErr) {
-            showToast(fallbackErr.message || err.message, 'error');
-            throw fallbackErr;
-          }
+        launch(0);
+        // 对冲：不等第一个跳彻底失败，超过阈值就并行发起备用接入点
+        if (order.length > 1) {
+          setTimeout(() => { if (!settled) launch(1); }, hedgeDelay);
         }
-        showToast(err.message, 'error');
-        throw err;
-      }
+      });
     };
 
     // 初始化数据加载（双轨同步）
@@ -564,14 +663,8 @@ createApp({
           }
         }
 
-        // 加载社课卡片
-        await loadTopics();
-
-        // 加载全站公共讨论区留言
-        await loadPublicComments();
-
-        // 加载榜单（始终加载标题，票数由前端按投票状态控制可见性）
-        await loadResults();
+        // 三个请求互不依赖：并发发出，弱网下不再一个接一个地等（暴露窗口从 3 次收成 1 次）
+        await Promise.all([loadTopics(), loadPublicComments(), loadResults()]);
       } catch (err) {
         console.error('初始化数据异常:', err);
         // 仅在真实网络离线时安全降级，保证离线可用
@@ -946,9 +1039,7 @@ createApp({
         showConfirmModal.value = false;
 
         // 即刻解锁票数与热度排行榜及公共讨论区
-        await loadTopics();
-        await loadResults();
-        await loadPublicComments();
+        await Promise.all([loadTopics(), loadResults(), loadPublicComments()]);
       } catch (err) {
         console.error('投票失败:', err);
         // 如果是断网或网络超时无响应，自动保存至离线队列，网络恢复时自愈同步
@@ -962,6 +1053,9 @@ createApp({
           setSafeStorage('lecture_pending_vote', JSON.stringify(pendingData));
           showToast('当前网络连接中断，已为您安全暂存选票！网络恢复后将自动为您重试提交', 'info');
           showConfirmModal.value = false;
+        } else {
+          // 业务级错误（投票已截止、超出可选数量等）当场告知，不做离线暂存
+          showToast(err.message || '投票提交失败，请稍后重试', 'warning');
         }
       } finally {
         submittingVote.value = false;
@@ -1563,8 +1657,12 @@ createApp({
     };
 
     // 静默无感实时同步（用户切回标签页或每 25 秒自动拉取最新投票数和公共讨论）
+    // 在途保护：弱网下一次请求可能还没回来就被定时器/切前台再次触发，避免请求越堆越多
+    let refreshInFlight = false;
     const refreshLiveState = async () => {
       if (document.visibilityState !== 'visible') return;
+      if (refreshInFlight) return;
+      refreshInFlight = true;
       try {
         await loadTopics();
         await loadPublicComments();
@@ -1573,13 +1671,18 @@ createApp({
         }
       } catch (e) {
         // 静默同步失败不打扰正常浏览
+      } finally {
+        refreshInFlight = false;
       }
     };
 
     // 离线暂存选票自动检查与自愈投递
+    let pendingSyncInFlight = false;
     const checkAndSyncPendingVote = async () => {
+      if (pendingSyncInFlight) return;
       const raw = getSafeStorage('lecture_pending_vote');
       if (!raw) return;
+      pendingSyncInFlight = true;
       try {
         const pending = JSON.parse(raw);
         if (pending && pending.topicIds && pending.topicIds.length > 0) {
@@ -1597,13 +1700,13 @@ createApp({
             userVote.value = res.vote;
             setSafeStorage('lecture_voter_ballot', JSON.stringify(res.vote));
             showToast('网络已恢复，您的暂存选票已成功同步并入账！', 'success');
-            await loadTopics();
-            await loadResults();
-            await loadPublicComments();
+            await Promise.all([loadTopics(), loadResults(), loadPublicComments()]);
           }
         }
       } catch (e) {
         // 网络依然未就绪，保持暂存状态等待下一次联网触发
+      } finally {
+        pendingSyncInFlight = false;
       }
     };
 
